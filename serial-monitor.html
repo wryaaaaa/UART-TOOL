@@ -1494,7 +1494,7 @@ function parseJSON(text, ts) {
       if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
         const obj = JSON.parse(trimmed);
         for (const [key, val] of Object.entries(obj)) {
-          if (typeof val === 'number' && isFinite(val)) {
+          if (typeof val === 'number' && isFinite(val) && /^[a-zA-Z_]\w*$/.test(key)) {
             results.push({ name: key, value: val, timestamp: ts });
           }
         }
