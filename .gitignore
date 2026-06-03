@@ -12,3 +12,6 @@ Thumbs.db
 .claude/
 .sixth/
 docs/
+*.png
+drivers/*.exe
+drivers/*.zip
