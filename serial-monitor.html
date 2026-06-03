@@ -666,7 +666,13 @@ button.accent:hover { background: rgba(63,185,80,0.15); }
                   <option value="key=value">key=value</option>
                   <option value="key:value">key:value</option>
                   <option value="bracket">{key:value}</option>
+                  <option value="json">JSON</option>
+                  <option value="csv">CSV/空格分隔</option>
+                  <option value="atcmd">AT指令响应</option>
                 </select>
+              </div>
+              <div id="csv-config" style="display:none;padding:4px 8px;">
+                <input type="text" id="csv-columns" placeholder="列名 如 Temp,Humi,Pres" style="width:100%;font-size:10px;padding:2px 4px;">
               </div>
               <div id="chart-var-items"></div>
               <div id="chart-var-input">
@@ -890,6 +896,8 @@ const dom = {
   varNameInput: $('#var-name-input'),
   btnAddVar: $('#btn-add-var'),
   parseFormatSelect: $('#parse-format-select'),
+  csvConfig: $('#csv-config'),
+  csvColumns: $('#csv-columns'),
   zoomIndicator: $('#zoom-indicator'),
 
   // 3D view
@@ -1356,6 +1364,11 @@ function flushPendingLines() {
       /\b([a-zA-Z_]\w*):(-?[\d]+(?:\.\d+)?(?:[eE][+-]?\d+)?)\b/g,
       '<span class="var-highlight">$1:$2</span>'
     );
+    // JSON: "key":value  or  "key": value
+    contentHtml = contentHtml.replace(
+      /"(\w+)"\s*:\s*(-?[\d]+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g,
+      '<span class="var-highlight">"$1":$2</span>'
+    );
 
     const hexContentHtml = `<span class="hex-content">${item.escapedHex}</span>`;
     const asciiContentHtml = `<span class="ascii-content">${contentHtml}</span>`;
@@ -1393,9 +1406,13 @@ function flushPendingLines() {
 //   key=value    e.g. Err=-0.53 P=0.34 I=12.10 RP1=2972
 //   key:value    e.g. H:15 T:12
 //   {key:value}  e.g. {H:15, T:12}
+//   JSON         e.g. {"H":15,"T":12}  — ESP32/MQTT/IoT常见
+//   CSV/空格分隔  e.g. 15,12,0.53,2972 — 需配置列名
+//   AT指令响应    e.g. +CWLAP:(3,"WiFi",-45) / +IPD,5:hello
 //   auto         tries all formats, picks the one with most matches
 
-state.parseFormat = 'auto'; // 'auto' | 'key=value' | 'key:value' | 'bracket'
+state.parseFormat = 'auto';
+state.csvColumnNames = [];
 
 // Parser: key=value (equals sign, most common in embedded debug output)
 // Handles: Err=-0.53, RP3= 390, Kp=0.726, SET=2.5, "Err = -0.53"
@@ -1457,6 +1474,91 @@ function parseBracketFormat(text, ts) {
   return results;
 }
 
+// Parser: JSON format — {"key":value, ...}
+// Common in ESP32/ESP8266/MQTT/IoT modules
+function parseJSON(text, ts) {
+  const results = [];
+  // Find JSON objects in text
+  const re = /\{[^{}]*(?:"|')(\w+)(?:"|')\s*:\s*(-?[\d]+(?:\.\d+)?(?:[eE][+-]?\d+)?)[^{}]*\}/g;
+  let match;
+  while ((match = re.exec(text)) !== null) {
+    const name = match[1];
+    const value = parseFloat(match[2]);
+    if (name.length === 0 || isNaN(value)) continue;
+    results.push({ name, value, timestamp: ts });
+  }
+  // Also try proper JSON.parse for clean JSON lines
+  if (results.length === 0) {
+    try {
+      const trimmed = text.trim();
+      if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+        const obj = JSON.parse(trimmed);
+        for (const [key, val] of Object.entries(obj)) {
+          if (typeof val === 'number' && isFinite(val)) {
+            results.push({ name: key, value: val, timestamp: ts });
+          }
+        }
+      }
+    } catch(e) { /* not valid JSON */ }
+  }
+  return results;
+}
+
+// Parser: CSV / space-separated values
+// Uses state.csvColumnNames for column labels
+// e.g. "15,12,0.53,2972" with columns "Temp,Humi,Err,ADC"
+function parseCSV(text, ts) {
+  const results = [];
+  const cols = state.csvColumnNames;
+  if (cols.length === 0) return results;
+
+  // Try comma/semicolon/tab/space as delimiter
+  let parts = null;
+  const delimiters = [',', ';', '\t'];
+  for (const delim of delimiters) {
+    const p = text.split(delim);
+    if (p.length >= cols.length) { parts = p; break; }
+  }
+  // Fallback: whitespace splitting
+  if (!parts) {
+    parts = text.trim().split(/\s+/);
+  }
+  if (parts.length < cols.length) return results;
+
+  for (let i = 0; i < cols.length && i < parts.length; i++) {
+    const name = cols[i].trim();
+    const value = parseFloat(parts[i].trim());
+    if (!name || isNaN(value)) continue;
+    results.push({ name, value, timestamp: ts });
+  }
+  return results;
+}
+
+// Parser: AT command responses
+// e.g. +CWLAP:(3,"WiFi",-45)  → extracts numeric values
+// e.g. +IPD,5:hello           → len=5
+// e.g. +CIFSR:STAIP,"192.168.1.100"
+// e.g. OK / ERROR             → status indicators
+function parseATCommand(text, ts) {
+  const results = [];
+  // AT response numeric extractions:
+  // +COMMAND:val1,val2,... or +COMMAND=val
+  const re = /\+(\w+)[:=]\s*(-?[\d]+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g;
+  let match;
+  while ((match = re.exec(text)) !== null) {
+    const name = match[1];
+    const value = parseFloat(match[2]);
+    if (isNaN(value)) continue;
+    results.push({ name, value, timestamp: ts });
+  }
+  // Also extract comma-separated values after colon: +CMD:123,456,789
+  const colonRe = /\+(\w+):\s*(-?[\d]+(?:\.\d+)?)[,\s]+(-?[\d]+(?:\.\d+)?)/g;
+  while ((match = colonRe.exec(text)) !== null) {
+    // Already captured by the first regex in most cases
+  }
+  return results;
+}
+
 /**
  * Parses structured variable data from text.
  * Uses the configured format (state.parseFormat).
@@ -1464,21 +1566,25 @@ function parseBracketFormat(text, ts) {
  */
 function parseVariables(text, ts) {
   switch (state.parseFormat) {
-    case 'key=value':
-      return parseKeyEqualsValue(text, ts);
-    case 'key:value':
-      return parseKeyColonValue(text, ts);
-    case 'bracket':
-      return parseBracketFormat(text, ts);
+    case 'key=value':   return parseKeyEqualsValue(text, ts);
+    case 'key:value':   return parseKeyColonValue(text, ts);
+    case 'bracket':     return parseBracketFormat(text, ts);
+    case 'json':        return parseJSON(text, ts);
+    case 'csv':         return parseCSV(text, ts);
+    case 'atcmd':       return parseATCommand(text, ts);
     case 'auto':
     default: {
       // Try all formats, return the one with most matches
-      const kv = parseKeyEqualsValue(text, ts);
-      const kc = parseKeyColonValue(text, ts);
-      const br = parseBracketFormat(text, ts);
-      if (kv.length >= kc.length && kv.length >= br.length) return kv;
-      if (kc.length >= kv.length && kc.length >= br.length) return kc;
-      return br;
+      const parsers = [
+        parseKeyEqualsValue, parseKeyColonValue, parseBracketFormat,
+        parseJSON, parseCSV, parseATCommand
+      ];
+      let best = [];
+      for (const p of parsers) {
+        const r = p(text, ts);
+        if (r.length > best.length) best = r;
+      }
+      return best;
     }
   }
 }
@@ -2114,6 +2220,12 @@ dom.varNameInput.addEventListener('keydown', (e) => {
 // Parse format selector
 dom.parseFormatSelect.addEventListener('change', () => {
   state.parseFormat = dom.parseFormatSelect.value;
+  dom.csvConfig.style.display = state.parseFormat === 'csv' ? 'block' : 'none';
+});
+
+// CSV column names input
+dom.csvColumns.addEventListener('input', () => {
+  state.csvColumnNames = dom.csvColumns.value.split(/[,;，；\s]+/).filter(Boolean);
 });
 
 // ============================================================================
