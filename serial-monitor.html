@@ -650,7 +650,7 @@ button.accent:hover { background: rgba(63,185,80,0.15); }
         <!-- Chart Panel -->
         <div id="chart-panel">
           <div id="chart-panel-header">
-            <span>📊 趋势图 <span style="font-size:10px;color:var(--text-muted);">(滚轮缩放 | 拖拽平移 | 双击重置)</span></span>
+            <span>📊 趋势图 <span style="font-size:10px;color:var(--text-muted);">(滚轮缩放Y | Shift+滚轮缩放X | 拖拽平移 | 双击重置)</span></span>
             <span id="zoom-indicator" style="display:none;font-size:10px;color:var(--accent-orange);margin-left:8px;cursor:pointer;" title="双击图表也可重置">🔍 已缩放 (点击重置)</span>
             <span class="chevron">▼</span>
           </div>
@@ -1279,7 +1279,7 @@ function handleReceivedData(bytes) {
   }
 
   // Safety: flush stale buffer if it grows too large (no newlines received)
-  if (state.lineBuffer.length > 4096) {
+  if (state.lineBuffer.length > 16384) {
     const line = state.lineBuffer;
     state.lineBuffer = '';
     state.rxCount++;
@@ -1575,15 +1575,18 @@ function parseVariables(text, ts) {
     case 'atcmd':       return parseATCommand(text, ts);
     case 'auto':
     default: {
-      // Try all formats, return the one with most matches
+      // Format memory: try last successful format first, fall back to full scan
       const parsers = [
         parseKeyEqualsValue, parseKeyColonValue, parseBracketFormat,
         parseJSON, parseCSV, parseATCommand
       ];
-      let best = [];
-      for (const p of parsers) {
-        const r = p(text, ts);
-        if (r.length > best.length) best = r;
+      const lastIdx = state._lastAutoFmtIdx || 0;
+      let best = parsers[lastIdx](text, ts);
+      if (best.length > 0) return best;
+      // Fallback: try all
+      for (let i = 0; i < parsers.length; i++) {
+        const r = parsers[i](text, ts);
+        if (r.length > best.length) { best = r; state._lastAutoFmtIdx = i; }
       }
       return best;
     }
@@ -1717,8 +1720,8 @@ function initChart() {
     const factor = e.deltaY < 0 ? 0.8 : 1.25; // zoom in / out
 
     // Determine what to zoom
-    const zoomX = !e.shiftKey;   // default: zoom X, Shift: zoom Y only
-    const zoomY = e.shiftKey;
+    const zoomY = !e.shiftKey;   // default wheel: zoom Y (value), Shift+wheel: zoom X (time)
+    const zoomX = e.shiftKey;
 
     // Get current ranges (auto or zoomed)
     const ranges = getChartRanges();
