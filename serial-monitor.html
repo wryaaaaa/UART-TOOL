@@ -1,0 +1,3104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UART 串口调试助手</title>
+<!-- 趋势图使用纯 Canvas 自绘，零外部依赖 -->
+<style>
+/* ===== CSS Variables (Day theme) ===== */
+:root {
+  --bg-primary: #0d1117;
+  --bg-secondary: #161b22;
+  --bg-panel: #1c2128;
+  --bg-input: #0d1117;
+  --bg-hover: #21262d;
+  --bg-active: #292e36;
+
+  --border-default: #30363d;
+  --border-muted: #21262d;
+
+  --text-primary: #c9d1d9;
+  --text-secondary: #8b949e;
+  --text-muted: #6e7681;
+
+  --accent-blue: #58a6ff;
+  --accent-green: #3fb950;
+  --accent-red: #f85149;
+  --accent-orange: #d2991d;
+  --accent-purple: #d2a8ff;
+
+  --chart-1: #58a6ff;
+  --chart-2: #3fb950;
+  --chart-3: #d2a8ff;
+  --chart-4: #f0883e;
+  --chart-5: #f85149;
+
+  --font-ui: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Cascadia Code', 'JetBrains Mono', 'Consolas', 'Source Code Pro', monospace;
+
+  --radius: 6px;
+  --radius-sm: 4px;
+  --transition: 150ms ease;
+}
+
+/* ===== Reset & Base ===== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+body { display: flex; flex-direction: column; }
+
+a { color: var(--accent-blue); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ===== Scrollbar ===== */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* ===== Top Toolbar ===== */
+#toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-default);
+  flex-shrink: 0;
+  min-height: 40px;
+  flex-wrap: wrap;
+}
+
+#toolbar .group { display: flex; align-items: center; gap: 4px; }
+#toolbar .divider { width: 1px; height: 20px; background: var(--border-default); margin: 0 4px; }
+
+#toolbar label { font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
+
+select, input[type="text"], input[type="number"] {
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  outline: none;
+  transition: border-color var(--transition);
+}
+select:focus, input:focus { border-color: var(--accent-blue); }
+select { cursor: pointer; }
+
+button {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--transition);
+  user-select: none;
+}
+button:hover { background: var(--bg-active); border-color: var(--text-muted); }
+button:active { transform: scale(0.97); }
+button.primary { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+button.primary:hover { background: #388bfd; }
+button.danger { background: transparent; border-color: var(--accent-red); color: var(--accent-red); }
+button.danger:hover { background: rgba(248,81,73,0.15); }
+button.accent { background: transparent; border-color: var(--accent-green); color: var(--accent-green); }
+button.accent:hover { background: rgba(63,185,80,0.15); }
+
+#btn-connect { min-width: 70px; }
+#btn-connect.connected { background: #1a3a2a; border-color: var(--accent-green); color: var(--accent-green); }
+
+/* ===== Main Layout ===== */
+#main {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* ===== Left Sidebar ===== */
+#sidebar {
+  width: 220px;
+  min-width: 180px;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border-default);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+#sidebar-header {
+  padding: 8px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.port-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-muted);
+  transition: background var(--transition);
+  font-size: 12px;
+}
+.port-item:hover { background: var(--bg-hover); }
+.port-item.active { background: var(--bg-active); border-left: 2px solid var(--accent-blue); }
+.port-item .port-indicator { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; }
+.port-item.connected .port-indicator { background: var(--accent-green); }
+.port-item .port-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.port-item .port-close { color: var(--text-muted); cursor: pointer; padding: 2px; opacity: 0; transition: opacity var(--transition); }
+.port-item:hover .port-close { opacity: 1; }
+.port-item .port-close:hover { color: var(--accent-red); }
+
+#settings-section {
+  padding: 10px;
+  border-top: 1px solid var(--border-muted);
+}
+
+#settings-section .setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+#settings-section label { font-size: 11px; color: var(--text-secondary); }
+#settings-section select, #settings-section input {
+  width: 100px;
+}
+
+/* ===== Right Content ===== */
+#content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+
+/* ===== Tab Bar ===== */
+#tab-bar {
+  display: flex;
+  align-items: center;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-default);
+  flex-shrink: 0;
+  min-height: 30px;
+  overflow-x: auto;
+}
+
+#tab-bar .tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  border-right: 1px solid var(--border-muted);
+  white-space: nowrap;
+  user-select: none;
+  transition: background var(--transition);
+}
+#tab-bar .tab:hover { background: var(--bg-hover); }
+#tab-bar .tab.active { background: var(--bg-panel); }
+#tab-bar .tab .tab-close { font-size: 14px; color: var(--text-muted); padding: 0 2px; }
+#tab-bar .tab .tab-close:hover { color: var(--accent-red); }
+
+/* ===== Receive Area ===== */
+#receive-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border-muted);
+  flex-shrink: 0;
+  min-height: 30px;
+}
+#receive-toolbar .group { display: flex; align-items: center; gap: 4px; }
+#receive-toolbar .toggle-btn { min-width: 36px; font-weight: 600; }
+#toolbar .toggle-btn.on,
+#receive-toolbar .toggle-btn.on,
+#send-toolbar .toggle-btn.on { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+
+#receive-container {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--bg-primary);
+  padding: 6px 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  min-height: 0;
+  position: relative;
+}
+
+.receive-line {
+  display: flex;
+  gap: 8px;
+  padding: 2px 12px;
+  transition: background var(--transition);
+  cursor: default;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.receive-line:hover { background: var(--bg-hover); }
+.receive-line .time { color: var(--text-muted); flex-shrink: 0; font-size: 11px; min-width: 90px; }
+.receive-line .content { color: var(--text-primary); flex: 1; }
+.receive-line .hex-content { color: var(--accent-orange); font-size: 12px; display: none; }
+
+.receive-line.show-hex .ascii-content { display: none; }
+.receive-line.show-hex .hex-content { display: inline; }
+
+.receive-line .var-highlight { color: var(--accent-blue); font-weight: 600; }
+
+/* ===== Context Menu ===== */
+#context-menu {
+  display: none;
+  position: fixed;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+  padding: 4px 0;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  z-index: 1000;
+  min-width: 180px;
+}
+#context-menu .menu-item {
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+#context-menu .menu-item:hover { background: var(--bg-hover); color: var(--accent-blue); }
+#context-menu .menu-sep { height: 1px; background: var(--border-muted); margin: 4px 0; }
+
+/* ===== Chart Area ===== */
+#chart-panel {
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-default);
+  flex-shrink: 0;
+}
+
+#chart-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+#chart-panel-header:hover { background: var(--bg-hover); }
+#chart-panel-header .chevron { transition: transform var(--transition); font-size: 10px; }
+#chart-panel.collapsed #chart-panel-header .chevron { transform: rotate(-90deg); }
+#chart-panel.collapsed #chart-body { display: none; }
+
+#chart-body { height: 200px; padding: 8px; display: flex; gap: 8px; }
+#chart-canvas-wrap { flex: 1; position: relative; }
+#chart-canvas-wrap canvas { width: 100% !important; height: 100% !important; }
+
+#chart-var-list {
+  width: 180px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+}
+#chart-var-list .var-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: var(--bg-panel);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+#chart-var-list .var-item .var-color { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+#chart-var-list .var-item .var-name { flex: 1; }
+#chart-var-list .var-item .var-value { color: var(--text-secondary); font-family: var(--font-mono); }
+#chart-var-list .var-item .var-remove { cursor: pointer; color: var(--text-muted); font-size: 14px; }
+#chart-var-list .var-item .var-remove:hover { color: var(--accent-red); }
+
+#chart-var-input {
+  display: flex;
+  gap: 4px;
+  padding: 4px 8px;
+}
+#chart-var-input input { flex: 1; font-size: 11px; padding: 3px 6px; }
+#chart-var-input button { font-size: 11px; padding: 3px 6px; }
+
+/* ===== 3D View ===== */
+#view3d-panel {
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-default);
+  flex-shrink: 0;
+}
+#view3d-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-muted);
+}
+#view3d-body {
+  height: 280px;
+  padding: 6px;
+  display: flex;
+  gap: 8px;
+}
+#view3d-canvas-wrap {
+  flex: 1;
+  position: relative;
+  background: #0d1117;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+#view3d-canvas-wrap:active { cursor: grabbing; }
+#view3d-canvas-wrap canvas {
+  width: 100%;
+  height: 100%;
+}
+#view3d-config {
+  width: 170px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 4px;
+  background: var(--bg-panel);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+}
+.view3d-bind-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.view3d-bind-row label {
+  font-size: 11px;
+  font-weight: 600;
+  min-width: 28px;
+}
+.view3d-bind-row input {
+  padding: 2px 6px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  width: 100%;
+}
+
+/* ===== Send Area ===== */
+#send-panel {
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-default);
+  flex-shrink: 0;
+}
+
+#send-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--border-muted);
+  min-height: 30px;
+}
+#send-toolbar .group { display: flex; align-items: center; gap: 4px; }
+#send-input-row {
+  display: flex;
+  gap: 6px;
+  padding: 6px 10px;
+}
+#send-input {
+  flex: 1;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  outline: none;
+  resize: none;
+  min-height: 36px;
+  transition: border-color var(--transition);
+}
+#send-input:focus { border-color: var(--accent-blue); }
+#send-input.error { border-color: var(--accent-red); animation: flash-error 1s ease; }
+#send-history {
+  max-height: 100px;
+  overflow-y: auto;
+  padding: 0 10px 4px;
+}
+#send-history .hist-item {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition);
+}
+#send-history .hist-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+@keyframes flash-error {
+  0%, 100% { border-color: var(--accent-red); box-shadow: 0 0 0 2px rgba(248,81,73,0.3); }
+  50% { border-color: var(--border-default); box-shadow: none; }
+}
+
+/* ===== Status Bar ===== */
+#statusbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 10px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-default);
+  font-size: 11px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  min-height: 24px;
+}
+#statusbar .status-group { display: flex; align-items: center; gap: 12px; }
+#statusbar .status-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+#statusbar .status-dot.green { background: var(--accent-green); }
+#statusbar .status-dot.red { background: var(--accent-red); }
+#statusbar .status-dot.gray { background: var(--text-muted); }
+
+/* Banner warning */
+#banner-warning {
+  display: none;
+  background: #3d1f1a;
+  color: var(--accent-red);
+  text-align: center;
+  padding: 8px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--accent-red);
+}
+/* Split layout */
+.split-container { display: flex; flex: 1; min-height: 0; }
+.split-container.horizontal { flex-direction: row; }
+.split-container.horizontal > .split-pane { flex: 1; min-width: 0; overflow: hidden; display: flex; flex-direction: column; }
+.split-divider {
+  width: 4px;
+  background: var(--border-default);
+  cursor: col-resize;
+  flex-shrink: 0;
+  transition: background var(--transition);
+}
+.split-divider:hover { background: var(--accent-blue); }
+
+/* ===== Utility ===== */
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<!-- Banner Warning -->
+<div id="banner-warning">⚠ 您的浏览器不支持 Web Serial API，请使用 Chrome 或 Edge 浏览器打开</div>
+
+<!-- Top Toolbar -->
+<div id="toolbar">
+  <div class="group">
+    <label>串口:</label>
+    <select id="port-select" style="min-width:120px;">
+      <option value="">-- 选择串口 --</option>
+    </select>
+    <button id="btn-refresh" title="刷新串口列表">⟳</button>
+  </div>
+  <button id="btn-connect" class="primary">连接</button>
+  <div class="divider"></div>
+  <div class="group">
+    <label>波特率:</label>
+    <select id="baudrate-select">
+      <option value="9600">9600</option>
+      <option value="19200">19200</option>
+      <option value="38400">38400</option>
+      <option value="57600">57600</option>
+      <option value="115200" selected>115200</option>
+      <option value="230400">230400</option>
+      <option value="460800">460800</option>
+      <option value="921600">921600</option>
+      <option value="custom">自定义</option>
+    </select>
+    <input type="number" id="baudrate-custom" value="115200" min="300" max="12000000" style="display:none;width:90px;" placeholder="自定义">
+  </div>
+  <div class="divider"></div>
+  <div class="group">
+    <button id="btn-view-2d" class="toggle-btn on" title="二维趋势图模式">📈 2D</button>
+    <button id="btn-view-3d" class="toggle-btn" title="三维空间模式">🧊 3D</button>
+  </div>
+  <div class="divider"></div>
+  <div class="group">
+    <button id="btn-clear-recv" title="清空接收区">清空</button>
+    <button id="btn-export-txt" title="导出 TXT 日志">导出TXT</button>
+    <button id="btn-export-json" title="导出 JSON">导出JSON</button>
+  </div>
+  <span style="flex:1;"></span>
+  <div class="group">
+    <span style="font-size:11px;color:var(--text-muted);" id="rx-rate">RX: 0 B/s</span>
+    <span style="font-size:11px;color:var(--text-muted);" id="tx-rate">TX: 0 B/s</span>
+  </div>
+</div>
+
+<!-- Main Content -->
+<div id="main">
+
+  <!-- Left Sidebar -->
+  <div id="sidebar">
+    <div id="sidebar-header">串口列表</div>
+    <div id="port-list">
+      <div class="port-item" style="color:var(--text-muted);justify-content:center;">未连接串口</div>
+    </div>
+
+    <div id="settings-section">
+      <div class="setting-row">
+        <label>数据位:</label>
+        <select id="databits-select">
+          <option value="7">7</option>
+          <option value="8" selected>8</option>
+        </select>
+      </div>
+      <div class="setting-row">
+        <label>停止位:</label>
+        <select id="stopbits-select">
+          <option value="1" selected>1</option>
+          <option value="2">2</option>
+        </select>
+      </div>
+      <div class="setting-row">
+        <label>校验位:</label>
+        <select id="parity-select">
+          <option value="none" selected>无</option>
+          <option value="even">偶校验</option>
+          <option value="odd">奇校验</option>
+        </select>
+      </div>
+      <div class="setting-row">
+        <label>流控:</label>
+        <select id="flowcontrol-select">
+          <option value="none" selected>无</option>
+          <option value="hardware">硬件 (RTS/CTS)</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right Content Area -->
+  <div id="content">
+    <!-- Tab Bar -->
+    <div id="tab-bar">
+      <div class="tab active" data-port-id="default">
+        <span>📡 主窗口</span>
+      </div>
+    </div>
+
+    <!-- Split Container -->
+    <div class="split-container horizontal" id="main-split">
+      <div class="split-pane" id="pane-primary">
+        <!-- Receive Toolbar -->
+        <div id="receive-toolbar">
+          <div class="group">
+            <button id="btn-view-ascii" class="toggle-btn on" title="ASCII 显示">ASCII</button>
+            <button id="btn-view-hex" class="toggle-btn" title="Hex 显示">HEX</button>
+          </div>
+          <div class="group">
+            <label><input type="checkbox" id="chk-timestamp" checked> 时间戳</label>
+            <label><input type="checkbox" id="chk-autoscroll" checked> 自动滚动</label>
+            <label><input type="checkbox" id="chk-wordwrap"> 自动换行</label>
+          </div>
+          <span style="flex:1;"></span>
+          <span id="rx-count" style="font-size:11px;color:var(--text-muted);">Rx: 0</span>
+        </div>
+
+        <!-- Receive Container -->
+        <div id="receive-container">
+          <div style="color:var(--text-muted);text-align:center;padding:40px;font-size:14px;">
+            🔌 等待串口连接...
+          </div>
+        </div>
+
+        <!-- Chart Panel -->
+        <div id="chart-panel">
+          <div id="chart-panel-header">
+            <span>📊 趋势图 <span style="font-size:10px;color:var(--text-muted);">(滚轮缩放 | 拖拽平移 | 双击重置)</span></span>
+            <span id="zoom-indicator" style="display:none;font-size:10px;color:var(--accent-orange);margin-left:8px;cursor:pointer;" title="双击图表也可重置">🔍 已缩放 (点击重置)</span>
+            <span class="chevron">▼</span>
+          </div>
+          <div id="chart-body">
+            <div id="chart-canvas-wrap">
+              <canvas id="chart-canvas"></canvas>
+            </div>
+            <div id="chart-var-list">
+              <div style="padding:4px 8px;display:flex;gap:4px;align-items:center;">
+                <label style="font-size:10px;color:var(--text-muted);white-space:nowrap;">格式:</label>
+                <select id="parse-format-select" style="font-size:10px;padding:2px 4px;width:100%;">
+                  <option value="auto" selected>自动检测</option>
+                  <option value="key=value">key=value</option>
+                  <option value="key:value">key:value</option>
+                  <option value="bracket">{key:value}</option>
+                </select>
+              </div>
+              <div id="chart-var-items"></div>
+              <div id="chart-var-input">
+                <input type="text" id="var-name-input" placeholder="变量名 如 Err,P,I,D" style="flex:1;">
+                <button id="btn-add-var">+</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3D View Panel (hidden in 2D mode) -->
+        <div id="view3d-panel" style="display:none;">
+          <div id="view3d-header">
+            <span>🧊 三维空间调试 <span style="font-size:10px;color:var(--text-muted);">(拖拽旋转 | 滚轮缩放 | 右键平移)</span></span>
+            <span id="view3d-status" style="font-size:10px;color:var(--text-muted);">等待数据...</span>
+          </div>
+          <div id="view3d-body">
+            <div id="view3d-canvas-wrap">
+              <canvas id="view3d-canvas"></canvas>
+            </div>
+            <div id="view3d-config">
+              <div style="font-size:11px;font-weight:600;color:var(--text-secondary);margin-bottom:6px;">⚙ 轴变量绑定</div>
+              <div class="view3d-bind-row">
+                <label style="color:#f85149;">X 轴:</label>
+                <input type="text" id="bind-x-var" placeholder="变量名 如 Ax" style="flex:1;font-size:11px;">
+              </div>
+              <div class="view3d-bind-row">
+                <label style="color:#3fb950;">Y 轴:</label>
+                <input type="text" id="bind-y-var" placeholder="变量名 如 Ay" style="flex:1;font-size:11px;">
+              </div>
+              <div class="view3d-bind-row">
+                <label style="color:#58a6ff;">Z 轴:</label>
+                <input type="text" id="bind-z-var" placeholder="变量名 如 Az" style="flex:1;font-size:11px;">
+              </div>
+              <div style="font-size:11px;font-weight:600;color:var(--text-secondary);margin:8px 0 6px;">🎯 显示模型</div>
+              <select id="model-select" style="width:100%;font-size:11px;">
+                <option value="cube">立方体 (Cube)</option>
+                <option value="board">电路板 (Board)</option>
+                <option value="point">坐标点 (Point)</option>
+                <option value="trail" selected>轨迹线 + 点 (Trail)</option>
+                <option value="all">全部显示</option>
+              </select>
+              <div class="view3d-bind-row" style="margin-bottom:4px;">
+                <label style="font-size:10px;color:var(--text-muted);">倍乘:</label>
+                <input type="number" id="bind-multiplier" value="1" step="0.1" min="0.01" style="width:60px;font-size:11px;padding:2px 4px;">
+              </div>
+              <div style="font-size:11px;font-weight:600;color:var(--text-secondary);margin:8px 0 6px;">🔄 数据模式</div>
+              <select id="data3d-mode" style="width:100%;font-size:11px;">
+                <option value="position">位置模式 (位移)</option>
+                <option value="orientation" selected>姿态模式 (旋转/倾斜)</option>
+              </select>
+              <div style="font-size:11px;font-weight:600;color:var(--text-secondary);margin:8px 0 6px;">📐 当前值</div>
+              <div id="view3d-values" style="font-family:var(--font-mono);font-size:11px;color:var(--text-primary);">
+                <div>X: --</div><div>Y: --</div><div>Z: --</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Send Panel -->
+        <div id="send-panel">
+          <div id="send-toolbar">
+            <div class="group">
+              <button id="btn-send-mode-ascii" class="toggle-btn on">ASCII</button>
+              <button id="btn-send-mode-hex" class="toggle-btn">HEX</button>
+            </div>
+            <div class="group">
+              <button id="btn-send" title="发送 (Enter)">发送</button>
+            </div>
+            <div class="group">
+              <label>定时:</label>
+              <input type="number" id="send-interval" value="1000" min="100" max="60000" style="width:60px;" placeholder="ms">
+              <button id="btn-timed-send">定时发送</button>
+            </div>
+            <span style="flex:1;"></span>
+            <span id="tx-count" style="font-size:11px;color:var(--text-muted);">Tx: 0</span>
+          </div>
+          <div id="send-input-row">
+            <textarea id="send-input" rows="1" placeholder="输入发送内容... (Enter 发送, Shift+Enter 换行)"></textarea>
+            <button id="btn-send-main" class="primary" style="min-width:60px;">发送</button>
+          </div>
+          <div id="send-history"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Status Bar -->
+<div id="statusbar">
+  <div class="status-group">
+    <span data-port-status="disconnected"><span class="status-dot gray" id="status-dot"></span><span id="status-text">未连接</span></span>
+    <span data-stats id="stats-bytes">收发: 0 / 0 bytes</span>
+  </div>
+  <div class="status-group">
+    <span id="status-time">--</span>
+  </div>
+</div>
+
+<!-- Context Menu -->
+<div id="context-menu">
+  <div class="menu-item" data-action="add-to-chart">📊 添加到趋势图</div>
+  <div class="menu-sep"></div>
+  <div class="menu-item" data-action="copy-ascii">📋 复制 ASCII</div>
+  <div class="menu-item" data-action="copy-hex">📋 复制 HEX</div>
+</div>
+
+<!-- Hidden data store for AI Agent readability -->
+<div id="ai-data-store" class="hidden">
+  <div id="ai-recent-data"></div>
+  <div id="ai-trend-data"></div>
+</div>
+
+<script>
+// ============================================================================
+// UART Serial Monitor — Complete Application
+// ============================================================================
+
+(function() {
+'use strict';
+
+// ============================================================================
+// GLOBAL STATE
+// ============================================================================
+const state = {
+  port: null,
+  writer: null,
+  reader: null,
+  readLoopAbort: null,
+
+  connected: false,
+  portId: null,
+
+  viewMode: 'ascii',     // 'ascii' | 'hex'
+  sendMode: 'ascii',     // 'ascii' | 'hex'
+  showTimestamp: true,
+  autoScroll: true,
+  wordWrap: false,
+  timedSendActive: false,
+  timedSendId: null,
+
+  rxBytes: 0,
+  txBytes: 0,
+  rxCount: 0,
+  txCount: 0,
+
+  chart: null,
+  chartVars: {},         // { name: { label, color, data: [] } }
+  chartColors: ['#58a6ff', '#3fb950', '#d2a8ff', '#f0883e', '#f85149', '#79c0ff', '#a5d6ff', '#ffa198'],
+  chartColorIdx: 0,
+  chartMaxPoints: 1000,
+
+  sendHistory: [],
+
+  splitPanes: [],
+  activeTabId: 'default',
+
+  textDecoder: new TextDecoder(),
+  textEncoder: new TextEncoder(),
+
+  // Line buffering for serial data (prevents mid-line splits)
+  lineBuffer: '',
+  pendingLines: [],       // batched DOM lines
+  flushTimer: null,       // DOM flush timer
+  chartRenderPending: false, // chart render throttle
+  lastChartRender: 0,
+
+  // Chart zoom/pan state
+  chartZoom: {
+    xMin: null, xMax: null,   // null = auto-range
+    yMin: null, yMax: null,   // null = auto-range
+    dragging: false,
+    dragStartX: 0, dragStartY: 0,
+    dragStartXMin: null, dragStartXMax: null,
+    dragStartYMin: null, dragStartYMax: null,
+  },
+};
+
+// ============================================================================
+// DOM REFS
+// ============================================================================
+const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => document.querySelectorAll(sel);
+
+const dom = {
+  // Toolbar
+  portSelect: $('#port-select'),
+  btnRefresh: $('#btn-refresh'),
+  btnConnect: $('#btn-connect'),
+  baudrateSelect: $('#baudrate-select'),
+  baudrateCustom: $('#baudrate-custom'),
+  btnClearRecv: $('#btn-clear-recv'),
+  btnExportTxt: $('#btn-export-txt'),
+  btnExportJson: $('#btn-export-json'),
+  rxRate: $('#rx-rate'),
+  txRate: $('#tx-rate'),
+
+  // Sidebar
+  portList: $('#port-list'),
+  databitsSelect: $('#databits-select'),
+  stopbitsSelect: $('#stopbits-select'),
+  paritySelect: $('#parity-select'),
+  flowcontrolSelect: $('#flowcontrol-select'),
+
+  // Tab Bar
+  tabBar: $('#tab-bar'),
+
+  // Receive
+  receiveContainer: $('#receive-container'),
+  btnViewAscii: $('#btn-view-ascii'),
+  btnViewHex: $('#btn-view-hex'),
+  chkTimestamp: $('#chk-timestamp'),
+  chkAutoscroll: $('#chk-autoscroll'),
+  chkWordwrap: $('#chk-wordwrap'),
+  rxCount: $('#rx-count'),
+
+  // Chart
+  chartPanel: $('#chart-panel'),
+  chartCanvas: $('#chart-canvas'),
+  chartVarItems: $('#chart-var-items'),
+  varNameInput: $('#var-name-input'),
+  btnAddVar: $('#btn-add-var'),
+  parseFormatSelect: $('#parse-format-select'),
+  zoomIndicator: $('#zoom-indicator'),
+
+  // 3D view
+  btnView2d: $('#btn-view-2d'),
+  btnView3d: $('#btn-view-3d'),
+  view3dPanel: $('#view3d-panel'),
+  view3dCanvas: $('#view3d-canvas'),
+  view3dStatus: $('#view3d-status'),
+  bindXVar: $('#bind-x-var'),
+  bindYVar: $('#bind-y-var'),
+  bindZVar: $('#bind-z-var'),
+  modelSelect: $('#model-select'),
+  data3dMode: $('#data3d-mode'),
+  bindMultiplier: $('#bind-multiplier'),
+  view3dValues: $('#view3d-values'),
+
+  // Send
+  sendInput: $('#send-input'),
+  btnSendMain: $('#btn-send-main'),
+  btnSendModeAscii: $('#btn-send-mode-ascii'),
+  btnSendModeHex: $('#btn-send-mode-hex'),
+  btnSend: $('#btn-send'),
+  sendInterval: $('#send-interval'),
+  btnTimedSend: $('#btn-timed-send'),
+  sendHistory: $('#send-history'),
+  txCount: $('#tx-count'),
+
+  // Status
+  statusDot: $('#status-dot'),
+  statusText: $('#status-text'),
+  statsBytes: $('#stats-bytes'),
+  statusTime: $('#status-time'),
+
+  // Context Menu
+  contextMenu: $('#context-menu'),
+
+  // AI Data
+  aiRecentData: $('#ai-recent-data'),
+  aiTrendData: $('#ai-trend-data'),
+
+  // Banner
+  bannerWarning: $('#banner-warning'),
+};
+
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+function formatTime(ts) {
+  const d = new Date(ts || Date.now());
+  return d.toTimeString().slice(0,8) + '.' + String(d.getMilliseconds()).padStart(3,'0');
+}
+
+function formatTimestamp(ts) {
+  const d = new Date(ts);
+  return d.getFullYear() + '-' +
+    String(d.getMonth()+1).padStart(2,'0') + '-' +
+    String(d.getDate()).padStart(2,'0') + ' ' +
+    d.toTimeString().slice(0,8) + '.' +
+    String(d.getMilliseconds()).padStart(3,'0');
+}
+
+function toHexString(bytes) {
+  return Array.from(bytes).map(b => b.toString(16).toUpperCase().padStart(2,'0')).join(' ');
+}
+
+function bytesToAscii(bytes) {
+  return Array.from(bytes).map(b => (b >= 0x20 && b < 0x7F) ? String.fromCharCode(b) : '.').join('');
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// ============================================================================
+// BITRATE TRACKING
+// ============================================================================
+let rateRxWindow = [];
+let rateTxWindow = [];
+setInterval(() => {
+  const now = Date.now();
+  rateRxWindow = rateRxWindow.filter(e => now - e.ts < 3000);
+  rateTxWindow = rateTxWindow.filter(e => now - e.ts < 3000);
+  const rxRate = rateRxWindow.reduce((s,e) => s + e.bytes, 0) / 3;
+  const txRate = rateTxWindow.reduce((s,e) => s + e.bytes, 0) / 3;
+  dom.rxRate.textContent = `RX: ${formatBytes(rxRate)}/s`;
+  dom.txRate.textContent = `TX: ${formatBytes(txRate)}/s`;
+}, 1000);
+
+function formatBytes(b) {
+  if (b < 1024) return Math.round(b) + ' B';
+  if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+  return (b/1048576).toFixed(1) + ' MB';
+}
+
+// ============================================================================
+// WEB SERIAL CHECK
+// ============================================================================
+if (!('serial' in navigator)) {
+  dom.bannerWarning.style.display = 'block';
+  dom.btnConnect.disabled = true;
+  dom.btnConnect.textContent = '不支持';
+  dom.btnConnect.classList.remove('primary');
+  dom.btnConnect.style.opacity = '0.5';
+}
+
+// ============================================================================
+// BAUD RATE
+// ============================================================================
+dom.baudrateSelect.addEventListener('change', () => {
+  if (dom.baudrateSelect.value === 'custom') {
+    dom.baudrateCustom.style.display = 'inline-block';
+    dom.baudrateCustom.focus();
+  } else {
+    dom.baudrateCustom.style.display = 'none';
+  }
+});
+
+function getBaudRate() {
+  if (dom.baudrateSelect.value === 'custom') {
+    return parseInt(dom.baudrateCustom.value) || 115200;
+  }
+  return parseInt(dom.baudrateSelect.value);
+}
+
+// ============================================================================
+// PORT LISTING
+// ============================================================================
+async function refreshPorts() {
+  dom.portSelect.innerHTML = '<option value="">-- 选择串口 --</option>';
+  try {
+    const ports = await navigator.serial.getPorts();
+    ports.forEach((port, i) => {
+      const info = port.getInfo();
+      const label = `COM${i+1}` + (info.usbVendorId ? ` (USB ${info.usbVendorId.toString(16)}:${info.usbProductId.toString(16)})` : '');
+      const option = document.createElement('option');
+      option.value = i;
+      option.textContent = label;
+      option._port = port;
+      dom.portSelect.appendChild(option);
+    });
+  } catch (e) {
+    console.warn('枚举串口失败:', e);
+  }
+
+  // Also request new port
+  if (dom.portSelect.options.length <= 1) {
+    const opt = document.createElement('option');
+    opt.value = 'request';
+    opt.textContent = '-- 点击选择串口 --';
+    dom.portSelect.appendChild(opt);
+  } else {
+    // Remove "request" option if we have ports
+    const reqOpt = dom.portSelect.querySelector('option[value="request"]');
+    if (reqOpt) reqOpt.remove();
+  }
+}
+
+dom.portSelect.addEventListener('change', async () => {
+  if (dom.portSelect.value === 'request') {
+    try {
+      const port = await navigator.serial.requestPort();
+      dom.portSelect.value = '';
+      await refreshPorts();
+       // select the newly added port
+      const lastOpt = dom.portSelect.options[dom.portSelect.options.length - 1];
+      if (lastOpt) lastOpt.selected = true;
+      connectPort();
+    } catch (e) {
+      // user cancelled
+      dom.portSelect.value = '';
+    }
+  }
+});
+
+dom.btnRefresh.addEventListener('click', refreshPorts);
+
+// ============================================================================
+// SERIAL MANAGER
+// ============================================================================
+async function connectPort() {
+  if (state.connected) {
+    await disconnectPort();
+    return;
+  }
+
+  const idx = dom.portSelect.value;
+  if (idx === '' || idx === 'request') {
+    // try to request a port
+    try {
+      const port = await navigator.serial.requestPort();
+      await refreshPorts();
+      const lastOpt = dom.portSelect.options[dom.portSelect.options.length - 1];
+      if (lastOpt) lastOpt.selected = true;
+      return connectPort(); // retry
+    } catch (e) {
+      return;
+    }
+  }
+
+  let port = dom.portSelect.options[parseInt(idx) + 1]._port;
+  if (!port) {
+    alert('请选择串口');
+    return;
+  }
+
+  const options = {
+    baudRate: getBaudRate(),
+    dataBits: parseInt(dom.databitsSelect.value),
+    stopBits: parseInt(dom.stopbitsSelect.value),
+    parity: dom.paritySelect.value,
+    flowControl: dom.flowcontrolSelect.value,
+  };
+
+  try {
+    await port.open(options);
+  } catch (e) {
+    if (e.message && e.message.includes('cancelled')) {
+      // user cancelled permission dialog — try requesting again
+      try {
+        const freshPort = await navigator.serial.requestPort();
+        await freshPort.open(options);
+        port = freshPort;
+      } catch (e2) {
+        alert('需要授予串口访问权限');
+        return;
+      }
+    } else {
+      alert('打开串口失败: ' + e.message);
+      return;
+    }
+  }
+
+  state.port = port;
+  state.connected = true;
+  state.portId = 'port-' + Date.now();
+  state.rxBytes = 0;
+  state.txBytes = 0;
+  state.rxCount = 0;
+  state.txCount = 0;
+  rateRxWindow = [];
+  rateTxWindow = [];
+
+  updateConnectionUI(true);
+
+  // Start reading
+  state.readLoopAbort = new AbortController();
+  startReadLoop(port, state.readLoopAbort.signal);
+
+  // Add sidebar port item
+  addPortItem(state.portId, port);
+
+  // Listen for disconnect
+  port.addEventListener('disconnect', () => {
+    handleDisconnect(state.portId);
+  });
+}
+
+async function disconnectPort(silent = false) {
+  if (state.readLoopAbort) {
+    state.readLoopAbort.abort();
+    state.readLoopAbort = null;
+  }
+
+  if (state.reader) {
+    try { await state.reader.cancel(); } catch(e) {}
+    state.reader = null;
+  }
+
+  if (state.writer) {
+    try { await state.writer.close(); } catch(e) {}
+    state.writer = null;
+  }
+
+  if (state.port) {
+    try { await state.port.close(); } catch(e) {}
+    state.port = null;
+  }
+
+  if (state.timedSendActive) {
+    stopTimedSend();
+  }
+
+  state.connected = false;
+  updateConnectionUI(false);
+}
+
+function handleDisconnect(portId) {
+  if (state.portId === portId) {
+    disconnectPort();
+  }
+  removePortItem(portId);
+}
+
+async function startReadLoop(port, signal) {
+  while (!signal.aborted) {
+    try {
+      state.reader = port.readable.getReader();
+      break;
+    } catch (e) {
+      if (signal.aborted) return;
+      await sleep(100);
+    }
+  }
+
+  try {
+    while (!signal.aborted) {
+      const { value, done } = await state.reader.read();
+      if (done) break;
+      if (value && value.length > 0) {
+        handleReceivedData(value);
+      }
+    }
+  } catch (e) {
+    if (!signal.aborted) {
+      console.error('读取错误:', e);
+      handleDisconnect(state.portId);
+    }
+  } finally {
+    try { state.reader?.releaseLock(); } catch(e) {}
+    state.reader = null;
+  }
+}
+
+function handleReceivedData(bytes) {
+  const now = Date.now();
+
+  // Track rate
+  rateRxWindow.push({ ts: now, bytes: bytes.length });
+  if (rateRxWindow.length > 500) rateRxWindow.shift();
+
+  state.rxBytes += bytes.length;
+
+  // Decode and buffer
+  const text = state.textDecoder.decode(bytes);
+  state.lineBuffer += text;
+
+  // Split into complete lines (ending with \n or \r\n)
+  // Keep incomplete trailing part in buffer
+  let newlineCount = 0;
+  let allParsedVars = [];
+
+  while (true) {
+    const nlIdx = state.lineBuffer.indexOf('\n');
+    if (nlIdx === -1) break;
+
+    let line = state.lineBuffer.substring(0, nlIdx);
+    state.lineBuffer = state.lineBuffer.substring(nlIdx + 1);
+
+    // Strip \r
+    if (line.endsWith('\r')) line = line.slice(0, -1);
+
+    if (line.length === 0) continue; // skip empty lines
+
+    newlineCount++;
+    const lineTs = now;
+    state.rxCount++;
+
+    // Hex for this line
+    const lineBytes = state.textEncoder.encode(line + '\n');
+    const hex = toHexString(lineBytes);
+    const escapedAscii = escapeHtml(line);
+    const escapedHex = escapeHtml(hex);
+
+    // Queue line for batch DOM insert
+    state.pendingLines.push({ ts: lineTs, escapedAscii, escapedHex, rawAscii: line, rawHex: hex });
+
+    // Parse variables from this complete line
+    const vars = parseVariables(line, lineTs);
+    if (vars.length > 0) {
+      allParsedVars = allParsedVars.concat(vars);
+    }
+  }
+
+  // Safety: flush stale buffer if it grows too large (no newlines received)
+  if (state.lineBuffer.length > 4096) {
+    const line = state.lineBuffer;
+    state.lineBuffer = '';
+    state.rxCount++;
+    const lineBytes = state.textEncoder.encode(line);
+    const hex = toHexString(lineBytes);
+    state.pendingLines.push({ ts: now, escapedAscii: escapeHtml(line), escapedHex: escapeHtml(hex), rawAscii: line, rawHex: hex });
+    const vars = parseVariables(line, now);
+    if (vars.length > 0) { for (const v of vars) allParsedVars.push(v); }
+  }
+
+  // Update counters (once per chunk, not per line, to reduce DOM writes)
+  dom.rxCount.textContent = `Rx: ${state.rxCount}`;
+  dom.statsBytes.textContent = `收发: ${state.rxBytes} / ${state.txBytes} bytes`;
+
+  // Batch flush DOM lines (throttled — flush at most every 50ms)
+  if (!state.flushTimer) {
+    state.flushTimer = setTimeout(flushPendingLines, 50);
+  }
+
+  // Feed parsed variables to 2D chart (only tracked variables)
+  if (allParsedVars.length > 0 && Object.keys(state.chartVars).length > 0) {
+    const trackedVars = allParsedVars.filter(v => v.name in state.chartVars);
+    const latest = {};
+    for (const v of trackedVars) {
+      latest[v.name] = v;
+    }
+    const uniqueVars = Object.values(latest);
+    if (uniqueVars.length > 0) {
+      updateChartData(uniqueVars);
+    }
+  }
+
+  // Feed ALL parsed variables to 3D view (independent of 2D chart tracking)
+  if (allParsedVars.length > 0 && state.viewMode3d) {
+    // Deduplicate: keep latest value per variable
+    const latest3d = {};
+    for (const v of allParsedVars) {
+      latest3d[v.name] = v;
+    }
+    feedDataTo3D(Object.values(latest3d));
+  }
+
+  // Debug: log periodically
+  if (allParsedVars.length > 0 && state.rxCount % 100 < newlineCount + 1) {
+    console.debug('[解析] 批量:', allParsedVars.length, '变量 | 已追踪:', Object.keys(state.chartVars).join(',') || '(无)',
+      '| 格式:', state.parseFormat, '| 缓冲:', state.lineBuffer.length, 'bytes');
+  }
+}
+
+function flushPendingLines() {
+  state.flushTimer = null;
+  if (state.pendingLines.length === 0) return;
+
+  const maxLines = 500; // max lines to keep in DOM to avoid memory bloat
+  const container = dom.receiveContainer;
+  const existingLines = container.querySelectorAll('.receive-line');
+  const toRemove = Math.max(0, existingLines.length + state.pendingLines.length - maxLines);
+
+  // Remove old lines if over limit
+  for (let i = 0; i < toRemove; i++) {
+    if (existingLines[i]) existingLines[i].remove();
+  }
+
+  // Build HTML batch
+  let html = '';
+  for (const item of state.pendingLines) {
+    let timeHtml = '';
+    if (state.showTimestamp) {
+      timeHtml = `<span class="time">${formatTime(item.ts)}</span>`;
+    }
+
+    // Highlight patterns
+    let contentHtml = item.escapedAscii;
+    contentHtml = contentHtml.replace(
+      /\{([^}]+)\}/g,
+      '<span class="var-highlight">{$1}</span>'
+    );
+    contentHtml = contentHtml.replace(
+      /\b([a-zA-Z_]\w*)=(-?[\d]+(?:\.\d+)?(?:[eE][+-]?\d+)?)\b/g,
+      '<span class="var-highlight">$1=$2</span>'
+    );
+    contentHtml = contentHtml.replace(
+      /\b([a-zA-Z_]\w*):(-?[\d]+(?:\.\d+)?(?:[eE][+-]?\d+)?)\b/g,
+      '<span class="var-highlight">$1:$2</span>'
+    );
+
+    const hexContentHtml = `<span class="hex-content">${item.escapedHex}</span>`;
+    const asciiContentHtml = `<span class="ascii-content">${contentHtml}</span>`;
+    const viewClass = state.viewMode === 'hex' ? ' class="show-hex"' : '';
+
+    html += `<div class="receive-line${viewClass}" data-timestamp="${item.ts}" data-hex="${escapeHtml(item.rawHex)}" data-ascii="${escapeHtml(item.rawAscii)}">${timeHtml}${hexContentHtml}${asciiContentHtml}</div>`;
+  }
+
+  container.insertAdjacentHTML('beforeend', html);
+
+  // Re-bind context menu on new lines
+  const newLines = container.querySelectorAll('.receive-line');
+  for (let i = Math.max(0, newLines.length - state.pendingLines.length); i < newLines.length; i++) {
+    newLines[i].addEventListener('contextmenu', function(e) {
+      e.preventDefault();
+      showContextMenu(e.clientX, e.clientY, this);
+    });
+  }
+
+  state.pendingLines = [];
+
+  // Auto scroll
+  if (state.autoScroll) {
+    container.scrollTop = container.scrollHeight;
+  }
+
+  // Update AI store
+  updateAIDataStore();
+}
+
+// ============================================================================
+// VARIABLE PARSER
+// ============================================================================
+// Supported formats:
+//   key=value    e.g. Err=-0.53 P=0.34 I=12.10 RP1=2972
+//   key:value    e.g. H:15 T:12
+//   {key:value}  e.g. {H:15, T:12}
+//   auto         tries all formats, picks the one with most matches
+
+state.parseFormat = 'auto'; // 'auto' | 'key=value' | 'key:value' | 'bracket'
+
+// Parser: key=value (equals sign, most common in embedded debug output)
+// Handles: Err=-0.53, RP3= 390, Kp=0.726, SET=2.5, "Err = -0.53"
+function parseKeyEqualsValue(text, ts) {
+  const results = [];
+  const re = /([a-zA-Z_][\w]*)\s*=\s*(-?[\d]+(?:\.\d+)?(?:[eE][+-]?\d+)?)\b/g;
+  let match;
+  while ((match = re.exec(text)) !== null) {
+    const name = match[1];
+    const value = parseFloat(match[2]);
+    // Skip noise: single letters can be ambiguous but common in PID output
+    if (name.length === 0 || isNaN(value)) continue;
+    results.push({ name, value, timestamp: ts });
+  }
+  return results;
+}
+
+// Parser: key:value (colon)
+function parseKeyColonValue(text, ts) {
+  const results = [];
+  const re = /([a-zA-Z_][\w]*)\s*:\s*(-?[\d]+(?:\.\d+)?(?:[eE][+-]?\d+)?)\b/g;
+  let match;
+  while ((match = re.exec(text)) !== null) {
+    const name = match[1];
+    const value = parseFloat(match[2]);
+    if (name.length === 0 || isNaN(value)) continue;
+    results.push({ name, value, timestamp: ts });
+  }
+  return results;
+}
+
+// Parser: {key:value, key:value} bracket format
+function parseBracketFormat(text, ts) {
+  const results = [];
+  const re = /\{([^}]+)\}/g;
+  let match;
+  while ((match = re.exec(text)) !== null) {
+    const inner = match[1].trim();
+    // Support both key:value and key=value inside brackets
+    const pairs = inner.split(/[,;，；]\s*/);
+    for (const pair of pairs) {
+      let name, valueStr;
+      if (pair.includes('=')) {
+        const idx = pair.indexOf('=');
+        name = pair.substring(0, idx).trim();
+        valueStr = pair.substring(idx + 1).trim();
+      } else if (pair.includes(':')) {
+        const idx = pair.indexOf(':');
+        name = pair.substring(0, idx).trim();
+        valueStr = pair.substring(idx + 1).trim();
+      } else {
+        continue;
+      }
+      const value = parseFloat(valueStr);
+      if (isNaN(value) || name.length === 0) continue;
+      results.push({ name, value, timestamp: ts });
+    }
+  }
+  return results;
+}
+
+/**
+ * Parses structured variable data from text.
+ * Uses the configured format (state.parseFormat).
+ * Returns: [{name, value, timestamp}, ...]
+ */
+function parseVariables(text, ts) {
+  switch (state.parseFormat) {
+    case 'key=value':
+      return parseKeyEqualsValue(text, ts);
+    case 'key:value':
+      return parseKeyColonValue(text, ts);
+    case 'bracket':
+      return parseBracketFormat(text, ts);
+    case 'auto':
+    default: {
+      // Try all formats, return the one with most matches
+      const kv = parseKeyEqualsValue(text, ts);
+      const kc = parseKeyColonValue(text, ts);
+      const br = parseBracketFormat(text, ts);
+      if (kv.length >= kc.length && kv.length >= br.length) return kv;
+      if (kc.length >= kv.length && kc.length >= br.length) return kc;
+      return br;
+    }
+  }
+}
+
+// ============================================================================
+// RECEIVE VIEW
+// ============================================================================
+dom.btnViewAscii.addEventListener('click', () => {
+  state.viewMode = 'ascii';
+  dom.btnViewAscii.classList.add('on');
+  dom.btnViewHex.classList.remove('on');
+  dom.receiveContainer.querySelectorAll('.receive-line').forEach(l => l.classList.remove('show-hex'));
+});
+
+dom.btnViewHex.addEventListener('click', () => {
+  state.viewMode = 'hex';
+  dom.btnViewHex.classList.add('on');
+  dom.btnViewAscii.classList.remove('on');
+  dom.receiveContainer.querySelectorAll('.receive-line').forEach(l => l.classList.add('show-hex'));
+});
+
+dom.chkTimestamp.addEventListener('change', () => {
+  state.showTimestamp = dom.chkTimestamp.checked;
+  dom.receiveContainer.querySelectorAll('.time').forEach(el => {
+    el.style.display = state.showTimestamp ? '' : 'none';
+  });
+});
+
+dom.chkAutoscroll.addEventListener('change', () => {
+  state.autoScroll = dom.chkAutoscroll.checked;
+});
+
+dom.chkWordwrap.addEventListener('change', () => {
+  state.wordWrap = dom.chkWordwrap.checked;
+  dom.receiveContainer.style.whiteSpace = state.wordWrap ? 'pre-wrap' : 'pre';
+});
+
+dom.btnClearRecv.addEventListener('click', () => {
+  dom.receiveContainer.innerHTML = '';
+  state.rxCount = 0;
+  state.lineBuffer = '';
+  state.pendingLines = [];
+  if (state.flushTimer) { clearTimeout(state.flushTimer); state.flushTimer = null; }
+  dom.rxCount.textContent = 'Rx: 0';
+});
+
+// ============================================================================
+// CONTEXT MENU
+// ============================================================================
+let contextLine = null;
+
+function showContextMenu(x, y, line) {
+  contextLine = line;
+  dom.contextMenu.style.display = 'block';
+  dom.contextMenu.style.left = x + 'px';
+  dom.contextMenu.style.top = y + 'px';
+
+  const ascii = line.getAttribute('data-ascii');
+  const hasVars = /\{[^}]+\}/.test(ascii);
+  dom.contextMenu.querySelector('[data-action="add-to-chart"]').style.display = hasVars ? '' : 'none';
+}
+
+document.addEventListener('click', () => {
+  dom.contextMenu.style.display = 'none';
+  contextLine = null;
+});
+
+dom.contextMenu.querySelector('[data-action="add-to-chart"]').addEventListener('click', () => {
+  if (!contextLine) return;
+  const ascii = contextLine.getAttribute('data-ascii');
+  const vars = parseVariables(ascii, Date.now());
+  for (const v of vars) {
+    addChartVariable(v.name);
+  }
+  dom.contextMenu.style.display = 'none';
+});
+
+dom.contextMenu.querySelector('[data-action="copy-ascii"]').addEventListener('click', () => {
+  if (!contextLine) return;
+  navigator.clipboard.writeText(contextLine.getAttribute('data-ascii'));
+  dom.contextMenu.style.display = 'none';
+});
+
+dom.contextMenu.querySelector('[data-action="copy-hex"]').addEventListener('click', () => {
+  if (!contextLine) return;
+  navigator.clipboard.writeText(contextLine.getAttribute('data-hex'));
+  dom.contextMenu.style.display = 'none';
+});
+
+// ============================================================================
+// TREND CHART
+// ============================================================================
+// ============================================================================
+// TREND CHART — Pure Canvas Renderer
+// ============================================================================
+
+// Chart layout constants
+const CHART_MARGIN = { top: 8, right: 16, bottom: 28, left: 56 };
+const CHART_GRID_COLOR = '#21262d';
+const CHART_TEXT_COLOR = '#8b949e';
+const CHART_BG = '#0d1117';
+const CHART_FONT = '10px "Segoe UI", system-ui, sans-serif';
+const CHART_FONT_SM = '9px "Segoe UI", system-ui, sans-serif';
+
+function initChart() {
+  state.chart = { canvas: dom.chartCanvas };
+  setupChartCanvas();
+
+  // ResizeObserver to handle canvas DPI and size changes
+  if (window.ResizeObserver) {
+    const observer = new ResizeObserver(() => {
+      setupChartCanvas();
+      renderChart();
+    });
+    observer.observe(dom.chartCanvas.parentElement);
+  }
+
+  // === Zoom & Pan mouse events ===
+  const canvas = dom.chartCanvas;
+  const zoom = state.chartZoom;
+
+  // Wheel zoom
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+
+    const factor = e.deltaY < 0 ? 0.8 : 1.25; // zoom in / out
+
+    // Determine what to zoom
+    const zoomX = !e.shiftKey;   // default: zoom X, Shift: zoom Y only
+    const zoomY = e.shiftKey;
+
+    // Get current ranges (auto or zoomed)
+    const ranges = getChartRanges();
+
+    // Convert mouse position to data coordinates
+    function mouseToData(ranges, mx, my) {
+      const chartW = rect.width - CHART_MARGIN.left - CHART_MARGIN.right;
+      const chartH = rect.height - CHART_MARGIN.top - CHART_MARGIN.bottom;
+      const tx = ranges.tMin + (mx - CHART_MARGIN.left) / chartW * (ranges.tMax - ranges.tMin);
+      const ty = ranges.vMax - (my - CHART_MARGIN.top) / chartH * (ranges.vMax - ranges.vMin);
+      return { tx, ty };
+    }
+
+    const pos = mouseToData(ranges, mx, my);
+
+    if (zoomX) {
+      const tRange = ranges.tMax - ranges.tMin;
+      zoom.xMin = pos.tx - (pos.tx - ranges.tMin) * factor;
+      zoom.xMax = pos.tx + (ranges.tMax - pos.tx) * factor;
+      // Clamp: don't zoom in beyond 100ms
+      if (zoom.xMax - zoom.xMin < 100) {
+        const mid = (zoom.xMin + zoom.xMax) / 2;
+        zoom.xMin = mid - 50;
+        zoom.xMax = mid + 50;
+      }
+    }
+    if (zoomY) {
+      const vRange = ranges.vMax - ranges.vMin;
+      zoom.yMin = pos.ty - (pos.ty - ranges.vMin) * factor;
+      zoom.yMax = pos.ty + (ranges.vMax - pos.ty) * factor;
+    }
+
+    renderChart();
+  }, { passive: false });
+
+  // Drag pan
+  canvas.addEventListener('mousedown', (e) => {
+    zoom.dragging = true;
+    zoom.dragStartX = e.clientX;
+    zoom.dragStartY = e.clientY;
+    const ranges = getChartRanges();
+    zoom.dragStartXMin = ranges.tMin;
+    zoom.dragStartXMax = ranges.tMax;
+    zoom.dragStartYMin = ranges.vMin;
+    zoom.dragStartYMax = ranges.vMax;
+    canvas.style.cursor = 'grabbing';
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!zoom.dragging) return;
+    const rect = canvas.getBoundingClientRect();
+    const chartW = rect.width - CHART_MARGIN.left - CHART_MARGIN.right;
+    const chartH = rect.height - CHART_MARGIN.top - CHART_MARGIN.bottom;
+    if (chartW <= 0 || chartH <= 0) return;
+
+    const dx = e.clientX - zoom.dragStartX;
+    const dy = e.clientY - zoom.dragStartY;
+
+    const tPerPx = (zoom.dragStartXMax - zoom.dragStartXMin) / chartW;
+    const vPerPx = (zoom.dragStartYMax - zoom.dragStartYMin) / chartH;
+
+    zoom.xMin = zoom.dragStartXMin - dx * tPerPx;
+    zoom.xMax = zoom.dragStartXMax - dx * tPerPx;
+    zoom.yMin = zoom.dragStartYMin + dy * vPerPx;
+    zoom.yMax = zoom.dragStartYMax + dy * vPerPx;
+
+    renderChart();
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (zoom.dragging) {
+      zoom.dragging = false;
+      canvas.style.cursor = '';
+    }
+  });
+
+  // Double-click reset zoom
+  canvas.addEventListener('dblclick', (e) => {
+    e.preventDefault();
+    resetChartZoom();
+    renderChart();
+  });
+
+  // Initial draw (empty chart with grid)
+  setTimeout(renderChart, 100);
+  // Click zoom indicator to reset
+  dom.zoomIndicator.addEventListener('click', (e) => {
+    e.stopPropagation();
+    resetChartZoom();
+    renderChart();
+  });
+
+  console.log('[趋势图] ✅ 纯 Canvas 渲染器就绪 (支持滚轮缩放/拖拽平移/双击重置)');
+}
+
+// Returns current visible ranges (zoom override or auto-computed)
+function getChartRanges() {
+  const zoom = state.chartZoom;
+  // Get auto ranges from all data
+  let tMin = Infinity, tMax = -Infinity;
+  let vMin = Infinity, vMax = -Infinity;
+  const varEntries = Object.entries(state.chartVars);
+  for (const [, info] of varEntries) {
+    for (const pt of info.data) {
+      if (pt.x < tMin) tMin = pt.x;
+      if (pt.x > tMax) tMax = pt.x;
+      if (pt.y < vMin) vMin = pt.y;
+      if (pt.y > vMax) vMax = pt.y;
+    }
+  }
+  const now = Date.now();
+  if (!isFinite(tMin)) { tMin = now - 30000; tMax = now; }
+  if (!isFinite(vMin)) { vMin = -1; vMax = 1; }
+  const tRange = tMax - tMin || 1000;
+  tMin -= tRange * 0.02;
+  tMax += tRange * 0.02;
+  let vRange = vMax - vMin;
+  if (vRange === 0) vRange = Math.abs(vMax) * 0.2 || 1;
+  vMin -= vRange * 0.1;
+  vMax += vRange * 0.1;
+
+  return {
+    tMin: zoom.xMin !== null ? zoom.xMin : tMin,
+    tMax: zoom.xMax !== null ? zoom.xMax : tMax,
+    vMin: zoom.yMin !== null ? zoom.yMin : vMin,
+    vMax: zoom.yMax !== null ? zoom.yMax : vMax,
+  };
+}
+
+function resetChartZoom() {
+  const zoom = state.chartZoom;
+  zoom.xMin = null; zoom.xMax = null;
+  zoom.yMin = null; zoom.yMax = null;
+}
+
+function setupChartCanvas() {
+  const canvas = dom.chartCanvas;
+  const rect = canvas.parentElement.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+
+  const w = rect.width;
+  const h = rect.height;
+
+  if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+  }
+}
+
+function addChartVariable(name, label) {
+  if (state.chartVars[name]) return;
+
+  const color = state.chartColors[state.chartColorIdx % state.chartColors.length];
+  state.chartColorIdx++;
+
+  state.chartVars[name] = { label: label || name, color, data: [] };
+  resetChartZoom(); // reset zoom when adding new variable
+  renderChartVarList();
+  updateAIDataStore();
+  state.lastChartRender = performance.now();
+  state.chartRenderPending = false;
+  renderChart();
+}
+
+function removeChartVariable(name) {
+  if (!state.chartVars[name]) return;
+  delete state.chartVars[name];
+  resetChartZoom();
+  renderChartVarList();
+  updateAIDataStore();
+  state.lastChartRender = performance.now();
+  state.chartRenderPending = false;
+  renderChart();
+}
+
+function updateChartData(parsedVars) {
+  let updated = false;
+  for (const v of parsedVars) {
+    if (!state.chartVars[v.name]) continue;
+    const varData = state.chartVars[v.name];
+    varData.data.push({ x: v.timestamp, y: v.value });
+    if (varData.data.length > state.chartMaxPoints) {
+      varData.data.shift();
+    }
+    updated = true;
+  }
+  if (updated) {
+    renderChartVarValues();
+    // Throttle canvas redraw: at most once per 50ms
+    scheduleChartRender();
+  }
+}
+
+function scheduleChartRender() {
+  const now = performance.now();
+  if (state.chartRenderPending) return;
+  const elapsed = now - state.lastChartRender;
+  if (elapsed < 50) {
+    state.chartRenderPending = true;
+    setTimeout(() => {
+      state.chartRenderPending = false;
+      state.lastChartRender = performance.now();
+      renderChart();
+    }, 50 - elapsed);
+  } else {
+    state.lastChartRender = now;
+    renderChart();
+  }
+}
+
+// ---- Canvas Rendering ----
+
+function renderChart() {
+  if (!state.chart) return;
+  const canvas = state.chart.canvas;
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.width / dpr;
+  const h = canvas.height / dpr;
+
+  ctx.save();
+  ctx.scale(dpr, dpr);
+
+  // Background
+  ctx.fillStyle = CHART_BG;
+  ctx.fillRect(0, 0, w, h);
+
+  const chartW = w - CHART_MARGIN.left - CHART_MARGIN.right;
+  const chartH = h - CHART_MARGIN.top - CHART_MARGIN.bottom;
+  if (chartW <= 0 || chartH <= 0) { ctx.restore(); return; }
+
+  const chartLeft = CHART_MARGIN.left;
+  const chartRight = chartLeft + chartW;
+  const chartTop = CHART_MARGIN.top;
+  const chartBottom = chartTop + chartH;
+
+  // Collect all data to find value range and time range
+  let allData = [];
+  const varEntries = Object.entries(state.chartVars);
+  for (const [, info] of varEntries) {
+    allData = allData.concat(info.data);
+  }
+
+  let tMin = Infinity, tMax = -Infinity;
+  let vMin = Infinity, vMax = -Infinity;
+
+  if (allData.length > 0) {
+    for (const pt of allData) {
+      if (pt.x < tMin) tMin = pt.x;
+      if (pt.x > tMax) tMax = pt.x;
+      if (pt.y < vMin) vMin = pt.y;
+      if (pt.y > vMax) vMax = pt.y;
+    }
+  }
+
+  // Default ranges when no data
+  const now = Date.now();
+  if (!isFinite(tMin)) { tMin = now - 30000; tMax = now; }
+  if (!isFinite(vMin)) { vMin = -1; vMax = 1; }
+
+  // Apply zoom override if set (user has zoomed in)
+  const zoom = state.chartZoom;
+  if (zoom.xMin !== null) { tMin = zoom.xMin; tMax = zoom.xMax; }
+  else {
+    // Expand time range slightly
+    const tRange = tMax - tMin || 1000;
+    tMin -= tRange * 0.02;
+    tMax += tRange * 0.02;
+  }
+
+  if (zoom.yMin !== null) { vMin = zoom.yMin; vMax = zoom.yMax; }
+  else {
+    // Expand value range
+    let vRange = vMax - vMin;
+    if (vRange === 0) vRange = Math.abs(vMax) * 0.2 || 1;
+    vMin -= vRange * 0.1;
+    vMax += vRange * 0.1;
+    // Round value range to nice numbers
+    const vMag = Math.pow(10, Math.floor(Math.log10(vRange)));
+    vMin = Math.floor(vMin / vMag) * vMag;
+    vMax = Math.ceil(vMax / vMag) * vMag;
+  }
+  let vRange = vMax - vMin;
+
+  // Coordinate helpers
+  function xToPixel(t) { return chartLeft + ((t - tMin) / (tMax - tMin)) * chartW; }
+  function yToPixel(v) { return chartBottom - ((v - vMin) / vRange) * chartH; }
+
+  // ---- Y-axis grid ----
+  const ySteps = 5;
+  const yStepSize = vRange / ySteps;
+
+  ctx.strokeStyle = CHART_GRID_COLOR;
+  ctx.lineWidth = 0.5;
+  ctx.fillStyle = CHART_TEXT_COLOR;
+  ctx.font = CHART_FONT;
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+
+  for (let i = 0; i <= ySteps; i++) {
+    const val = vMin + i * yStepSize;
+    const y = yToPixel(val);
+
+    // Grid line
+    ctx.beginPath();
+    ctx.moveTo(chartLeft, y);
+    ctx.lineTo(chartRight, y);
+    ctx.stroke();
+
+    // Label
+    ctx.fillText(formatChartNumber(val), chartLeft - 6, y);
+  }
+
+  // ---- X-axis (time) grid ----
+  const idealTickCount = 5;
+  const idealTickInterval = (tMax - tMin) / idealTickCount;
+  const tickMag = Math.pow(10, Math.floor(Math.log10(idealTickInterval)));
+  let tickInterval = tickMag;
+  if (idealTickInterval / tickMag > 5) tickInterval = tickMag * 10;
+  else if (idealTickInterval / tickMag > 2) tickInterval = tickMag * 5;
+  else if (idealTickInterval / tickMag > 1) tickInterval = tickMag * 2;
+
+  const firstTick = Math.ceil(tMin / tickInterval) * tickInterval;
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+
+  for (let t = firstTick; t <= tMax; t += tickInterval) {
+    const x = xToPixel(t);
+
+    // Grid line
+    ctx.strokeStyle = CHART_GRID_COLOR;
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(x, chartTop);
+    ctx.lineTo(x, chartBottom);
+    ctx.stroke();
+
+    // Label
+    const d = new Date(t);
+    const label = d.toTimeString().slice(0, 8);
+    ctx.fillStyle = CHART_TEXT_COLOR;
+    ctx.fillText(label, x, chartBottom + 6);
+  }
+
+  // ---- Chart border ----
+  ctx.strokeStyle = '#30363d';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(chartLeft, chartTop, chartW, chartH);
+
+  // ---- Draw variable lines ----
+  ctx.lineWidth = 2;
+
+  for (const [, info] of varEntries) {
+    if (info.data.length < 2) continue;
+
+    ctx.strokeStyle = info.color;
+    ctx.beginPath();
+
+    let firstPoint = true;
+    for (const pt of info.data) {
+      const px = xToPixel(pt.x);
+      const py = yToPixel(pt.y);
+
+      if (firstPoint) {
+        ctx.moveTo(px, py);
+        firstPoint = false;
+      } else {
+        ctx.lineTo(px, py);
+      }
+    }
+    ctx.stroke();
+
+    // Draw last point dot
+    const lastPt = info.data[info.data.length - 1];
+    const lx = xToPixel(lastPt.x);
+    const ly = yToPixel(lastPt.y);
+    ctx.fillStyle = info.color;
+    ctx.beginPath();
+    ctx.arc(lx, ly, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // ---- Legend ----
+  if (varEntries.length > 0) {
+    const legendY = chartTop + 2;
+    let legendX = chartLeft + 8;
+    ctx.font = CHART_FONT_SM;
+    ctx.textBaseline = 'top';
+    ctx.textAlign = 'left';
+
+    for (const [name, info] of varEntries) {
+      const text = `${info.label}`;
+      const textW = ctx.measureText(text).width + 16;
+
+      if (legendX + textW > chartRight - 8) {
+        legendX = chartLeft + 8;
+        // Would need another row; but for simplicity just break
+        break;
+      }
+
+      // Color dot
+      ctx.fillStyle = info.color;
+      ctx.beginPath();
+      ctx.arc(legendX + 5, legendY + 5, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Label
+      ctx.fillStyle = '#c9d1d9';
+      ctx.fillText(text, legendX + 12, legendY + 1);
+
+      legendX += textW;
+    }
+  }
+
+  ctx.restore();
+
+  // Show/hide zoom indicator (reuses `zoom` declared above)
+  const isZoomed = zoom.xMin !== null || zoom.yMin !== null;
+  dom.zoomIndicator.style.display = isZoomed ? 'inline' : 'none';
+}
+
+function formatChartNumber(val) {
+  if (Math.abs(val) >= 10000) return (val / 1000).toFixed(1) + 'k';
+  if (Math.abs(val) >= 1000) return val.toFixed(0);
+  if (Math.abs(val) >= 100) return val.toFixed(1);
+  if (Math.abs(val) >= 1) return val.toFixed(2);
+  if (Math.abs(val) >= 0.01) return val.toFixed(3);
+  if (val === 0) return '0';
+  return val.toExponential(1);
+}
+
+function renderChartVarList() {
+  dom.chartVarItems.innerHTML = Object.entries(state.chartVars).map(([name, info]) => `
+    <div class="var-item">
+      <span class="var-color" style="background:${info.color};"></span>
+      <span class="var-name">${escapeHtml(info.label)}</span>
+      <span class="var-value" data-var-name="${escapeHtml(name)}">--</span>
+      <span class="var-remove" data-remove="${escapeHtml(name)}" title="移除变量">×</span>
+    </div>
+  `).join('');
+
+  // Bind remove handlers
+  dom.chartVarItems.querySelectorAll('.var-remove').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      removeChartVariable(el.getAttribute('data-remove'));
+    });
+  });
+}
+
+function renderChartVarValues() {
+  dom.chartVarItems.querySelectorAll('.var-value').forEach(el => {
+    const name = el.getAttribute('data-var-name');
+    const info = state.chartVars[name];
+    if (info && info.data.length > 0) {
+      const last = info.data[info.data.length - 1];
+      el.textContent = last.y.toFixed(2);
+    }
+  });
+}
+
+// Chart panel collapsible
+dom.chartPanel.querySelector('#chart-panel-header').addEventListener('click', () => {
+  dom.chartPanel.classList.toggle('collapsed');
+  if (!dom.chartPanel.classList.contains('collapsed')) {
+    setTimeout(() => {
+      setupChartCanvas();
+      renderChart();
+    }, 200);
+  }
+});
+
+// Add variable from input
+dom.btnAddVar.addEventListener('click', () => {
+  const input = dom.varNameInput.value.trim();
+  if (!input) return;
+  const parts = input.split(/[,;，；]\s*/);
+  for (const part of parts) {
+    let name, label;
+    if (part.includes(':')) {
+      [name, label] = part.split(':').map(s => s.trim());
+    } else {
+      name = part.trim();
+      label = name;
+    }
+    if (name) addChartVariable(name, label);
+  }
+  dom.varNameInput.value = '';
+});
+
+dom.varNameInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    dom.btnAddVar.click();
+  }
+});
+
+// Parse format selector
+dom.parseFormatSelect.addEventListener('change', () => {
+  state.parseFormat = dom.parseFormatSelect.value;
+});
+
+// ============================================================================
+// SEND PANEL
+// ============================================================================
+function getSendMode() {
+  return state.sendMode;
+}
+
+dom.btnSendModeAscii.addEventListener('click', () => {
+  state.sendMode = 'ascii';
+  dom.btnSendModeAscii.classList.add('on');
+  dom.btnSendModeHex.classList.remove('on');
+  dom.sendInput.placeholder = '输入发送内容... (Enter 发送, Shift+Enter 换行)';
+});
+
+dom.btnSendModeHex.addEventListener('click', () => {
+  state.sendMode = 'hex';
+  dom.btnSendModeHex.classList.add('on');
+  dom.btnSendModeAscii.classList.remove('on');
+  dom.sendInput.placeholder = '输入 HEX (如: AA BB CC)... (Enter 发送)';
+});
+
+async function sendData(dataStr) {
+  if (!state.connected || !state.port || !state.port.writable) {
+    flashError(dom.sendInput);
+    return;
+  }
+
+  let bytes;
+  try {
+    if (state.sendMode === 'hex') {
+      // Parse hex string
+      const hex = dataStr.replace(/\s+/g, '');
+      if (hex.length % 2 !== 0) throw new Error('Hex length must be even');
+      bytes = new Uint8Array(hex.match(/.{2}/g).map(b => parseInt(b, 16)));
+    } else {
+      bytes = state.textEncoder.encode(dataStr);
+    }
+  } catch (e) {
+    flashError(dom.sendInput);
+    console.error('编码失败:', e);
+    return;
+  }
+
+  try {
+    if (!state.writer) {
+      state.writer = state.port.writable.getWriter();
+    }
+    await state.writer.write(bytes);
+  } catch (e) {
+    flashError(dom.sendInput);
+    console.error('发送失败:', e);
+    // Reset writer on error
+    try { state.writer?.releaseLock(); } catch(_) {}
+    state.writer = null;
+    return;
+  }
+
+  state.txBytes += bytes.length;
+  state.txCount++;
+  dom.txCount.textContent = `Tx: ${state.txCount}`;
+  dom.statsBytes.textContent = `收发: ${state.rxBytes} / ${state.txBytes} bytes`;
+  rateTxWindow.push({ ts: Date.now(), bytes: bytes.length });
+
+  // Add to history
+  addSendHistory(dataStr);
+}
+
+function flashError(el) {
+  el.classList.add('error');
+  setTimeout(() => el.classList.remove('error'), 1000);
+}
+
+function addSendHistory(text) {
+  // Don't duplicate last entry
+  if (state.sendHistory.length > 0 && state.sendHistory[0] === text) return;
+  state.sendHistory.unshift(text);
+  if (state.sendHistory.length > 50) state.sendHistory.pop();
+  renderSendHistory();
+}
+
+function renderSendHistory() {
+  dom.sendHistory.innerHTML = state.sendHistory.map(s =>
+    `<div class="hist-item" title="${escapeHtml(s)}">${escapeHtml(s.length > 80 ? s.slice(0,80)+'...' : s)}</div>`
+  ).join('');
+  dom.sendHistory.querySelectorAll('.hist-item').forEach((el, i) => {
+    el.addEventListener('click', () => {
+      dom.sendInput.value = state.sendHistory[i];
+      dom.sendInput.focus();
+    });
+  });
+}
+
+dom.sendInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendData(dom.sendInput.value);
+  }
+});
+
+dom.btnSendMain.addEventListener('click', () => sendData(dom.sendInput.value));
+dom.btnSend.addEventListener('click', () => sendData(dom.sendInput.value));
+
+// Timed send
+dom.btnTimedSend.addEventListener('click', () => {
+  if (state.timedSendActive) {
+    stopTimedSend();
+  } else {
+    startTimedSend();
+  }
+});
+
+function startTimedSend() {
+  const interval = parseInt(dom.sendInterval.value) || 1000;
+  state.timedSendActive = true;
+  dom.btnTimedSend.textContent = '停止';
+  dom.btnTimedSend.classList.add('danger');
+
+  function tick() {
+    if (!state.timedSendActive) return;
+    sendData(dom.sendInput.value);
+    state.timedSendId = setTimeout(tick, interval);
+  }
+  tick();
+}
+
+function stopTimedSend() {
+  state.timedSendActive = false;
+  dom.btnTimedSend.textContent = '定时发送';
+  dom.btnTimedSend.classList.remove('danger');
+  if (state.timedSendId) {
+    clearTimeout(state.timedSendId);
+    state.timedSendId = null;
+  }
+}
+
+// ============================================================================
+// CONNECTION UI
+// ============================================================================
+function updateConnectionUI(connected) {
+  if (connected) {
+    dom.btnConnect.textContent = '断开';
+    dom.btnConnect.classList.remove('primary');
+    dom.btnConnect.classList.add('connected');
+    dom.statusDot.className = 'status-dot green';
+    dom.statusText.textContent = '已连接';
+    dom.portSelect.disabled = true;
+    dom.baudrateSelect.disabled = true;
+    dom.baudrateCustom.disabled = true;
+    dom.databitsSelect.disabled = true;
+    dom.stopbitsSelect.disabled = true;
+    dom.paritySelect.disabled = true;
+    dom.flowcontrolSelect.disabled = true;
+    dom.receiveContainer.innerHTML = '';
+    dom.receiveContainer.setAttribute('data-port-status', 'connected');
+  } else {
+    dom.btnConnect.textContent = '连接';
+    dom.btnConnect.classList.add('primary');
+    dom.btnConnect.classList.remove('connected');
+    dom.statusDot.className = 'status-dot gray';
+    dom.statusText.textContent = '未连接';
+    dom.rxRate.textContent = 'RX: 0 B/s';
+    dom.txRate.textContent = 'TX: 0 B/s';
+    dom.portSelect.disabled = false;
+    dom.baudrateSelect.disabled = false;
+    dom.baudrateCustom.disabled = false;
+    dom.databitsSelect.disabled = false;
+    dom.stopbitsSelect.disabled = false;
+    dom.paritySelect.disabled = false;
+    dom.flowcontrolSelect.disabled = false;
+    dom.receiveContainer.setAttribute('data-port-status', 'disconnected');
+  }
+  updateStatusTime();
+}
+
+function updateStatusTime() {
+  dom.statusTime.textContent = formatTime(Date.now());
+}
+setInterval(updateStatusTime, 1000);
+
+// ============================================================================
+// PORT ITEMS (Sidebar + Tabs)
+// ============================================================================
+function addPortItem(portId, port) {
+  // Sidebar
+  const info = port.getInfo();
+  const label = info.usbVendorId
+    ? `COM (${info.usbVendorId.toString(16)}:${info.usbProductId.toString(16)})`
+    : '串口设备';
+
+  const item = document.createElement('div');
+  item.className = 'port-item connected active';
+  item.setAttribute('data-port-id', portId);
+  item.innerHTML = `
+    <span class="port-indicator"></span>
+    <span class="port-name">${label}</span>
+    <span class="port-close" data-close="${portId}">×</span>
+  `;
+  item.addEventListener('click', () => switchTab(portId));
+  item.querySelector('.port-close').addEventListener('click', (e) => {
+    e.stopPropagation();
+    disconnectPort();
+    removePortItem(portId);
+  });
+
+  // Remove "no connections" placeholder
+  const placeholder = dom.portList.querySelector('.port-item[style]');
+  if (placeholder) placeholder.remove();
+  dom.portList.appendChild(item);
+
+  // Tab
+  const tab = document.createElement('div');
+  tab.className = 'tab';
+  tab.setAttribute('data-port-id', portId);
+  tab.innerHTML = `<span>📡 ${label.substring(0, 20)}</span><span class="tab-close" data-close="${portId}">×</span>`;
+  tab.addEventListener('click', () => switchTab(portId));
+  tab.querySelector('.tab-close').addEventListener('click', (e) => {
+    e.stopPropagation();
+    disconnectPort();
+    removePortItem(portId);
+  });
+  dom.tabBar.appendChild(tab);
+
+  switchTab(portId);
+}
+
+function removePortItem(portId) {
+  const sidebarItem = dom.portList.querySelector(`[data-port-id="${portId}"]`);
+  if (sidebarItem) sidebarItem.remove();
+  const tab = dom.tabBar.querySelector(`[data-port-id="${portId}"]`);
+  if (tab) tab.remove();
+
+  if (dom.portList.querySelectorAll('.port-item.connected').length === 0) {
+    dom.portList.innerHTML = '<div class="port-item" style="color:var(--text-muted);justify-content:center;">未连接串口</div>';
+    switchTab('default');
+  }
+}
+
+function switchTab(portId) {
+  state.activeTabId = portId;
+  dom.tabBar.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  dom.portList.querySelectorAll('.port-item').forEach(p => p.classList.remove('active'));
+
+  const tab = dom.tabBar.querySelector(`[data-port-id="${portId}"]`);
+  if (tab) tab.classList.add('active');
+  const portItem = dom.portList.querySelector(`[data-port-id="${portId}"]`);
+  if (portItem) portItem.classList.add('active');
+}
+
+// ============================================================================
+// LAYOUT MANAGER — Drag-to-split & resize
+// ============================================================================
+let splitDivider = null;
+let splitPane2 = null;
+let isSplit = false;
+
+const mainSplit = $('#main-split');
+const panePrimary = $('#pane-primary');
+
+function createSplitPane() {
+  if (isSplit) return;
+
+  // Create divider
+  splitDivider = document.createElement('div');
+  splitDivider.className = 'split-divider';
+  splitDivider.title = '拖拽调整分屏大小 | 双击合并';
+
+  // Create second pane
+  splitPane2 = document.createElement('div');
+  splitPane2.className = 'split-pane';
+  splitPane2.id = 'pane-secondary';
+  splitPane2.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-size:13px;">
+      📡 拖拽标签页到此处查看第二个串口
+    </div>
+  `;
+
+  mainSplit.appendChild(splitDivider);
+  mainSplit.appendChild(splitPane2);
+  isSplit = true;
+
+  // Divider resize
+  let dragging = false;
+  splitDivider.addEventListener('mousedown', (e) => {
+    dragging = true;
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const rect = mainSplit.getBoundingClientRect();
+    const pct = ((e.clientX - rect.left) / rect.width) * 100;
+    if (pct > 25 && pct < 75) {
+      panePrimary.style.flex = `${pct} 1 0%`;
+      splitPane2.style.flex = `${100 - pct} 1 0%`;
+    }
+  });
+
+  document.addEventListener('mouseup', () => { dragging = false; });
+
+  // Double-click to merge
+  splitDivider.addEventListener('dblclick', () => {
+    removeSplitPane();
+  });
+}
+
+function removeSplitPane() {
+  if (!isSplit) return;
+  if (splitDivider) { splitDivider.remove(); splitDivider = null; }
+  if (splitPane2) { splitPane2.remove(); splitPane2 = null; }
+  panePrimary.style.flex = '';
+  isSplit = false;
+}
+
+// Tab drag to create split pane
+dom.tabBar.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+});
+
+dom.tabBar.addEventListener('drop', (e) => {
+  e.preventDefault();
+  const tabEl = document.elementFromPoint(e.clientX, e.clientY);
+  // If dropped on right half of content area, create split
+  const contentRect = document.getElementById('content').getBoundingClientRect();
+  const relX = e.clientX - contentRect.left;
+  if (relX > contentRect.width * 0.5) {
+    if (!isSplit) createSplitPane();
+  }
+});
+
+// Add drag attributes to tabs dynamically
+function makeTabDraggable(tab) {
+  tab.setAttribute('draggable', 'true');
+  tab.addEventListener('dragstart', (e) => {
+    e.dataTransfer.setData('text/plain', tab.getAttribute('data-port-id'));
+    e.dataTransfer.effectAllowed = 'move';
+    tab.style.opacity = '0.5';
+  });
+  tab.addEventListener('dragend', (e) => {
+    tab.style.opacity = '';
+  });
+}
+
+// Make existing tabs draggable
+dom.tabBar.querySelectorAll('.tab').forEach(makeTabDraggable);
+
+// Override addPortItem tab creation to make tabs draggable
+const _origTabBarAppend = dom.tabBar.appendChild.bind(dom.tabBar);
+// We need to hook into tab creation. Instead, let's add a MutationObserver.
+const tabObserver = new MutationObserver((mutations) => {
+  for (const m of mutations) {
+    for (const node of m.addedNodes) {
+      if (node.classList && node.classList.contains('tab')) {
+        makeTabDraggable(node);
+      }
+    }
+  }
+});
+tabObserver.observe(dom.tabBar, { childList: true });
+
+// ============================================================================
+// EXPORT
+// ============================================================================
+dom.btnExportTxt.addEventListener('click', () => {
+  const lines = dom.receiveContainer.querySelectorAll('.receive-line');
+  const now = new Date();
+  let txt = `UART Serial Monitor Log\n`;
+  txt += `Exported: ${formatTimestamp(now.getTime())}\n`;
+  txt += `${'='.repeat(60)}\n\n`;
+
+  lines.forEach(line => {
+    const ts = line.getAttribute('data-timestamp');
+    const ascii = line.getAttribute('data-ascii');
+    const hex = line.getAttribute('data-hex');
+    txt += `[${formatTimestamp(parseInt(ts))}]\n`;
+    txt += `  ASCII: ${ascii}\n`;
+    txt += `  HEX:   ${hex}\n`;
+    txt += `${'-'.repeat(40)}\n`;
+  });
+
+  downloadFile(txt, `uart-log-${formatFileTimestamp(now)}.txt`, 'text/plain');
+});
+
+dom.btnExportJson.addEventListener('click', () => {
+  const lines = dom.receiveContainer.querySelectorAll('.receive-line');
+  const records = [];
+  lines.forEach(line => {
+    records.push({
+      timestamp: parseInt(line.getAttribute('data-timestamp')),
+      datetime: formatTimestamp(parseInt(line.getAttribute('data-timestamp'))),
+      ascii: line.getAttribute('data-ascii'),
+      hex: line.getAttribute('data-hex'),
+    });
+  });
+
+  // Also include trend data
+  const trendData = {};
+  for (const [name, info] of Object.entries(state.chartVars)) {
+    trendData[name] = {
+      label: info.label,
+      data: info.data.map(d => ({ timestamp: d.x, datetime: formatTimestamp(d.x), value: d.y })),
+    };
+  }
+
+  const json = JSON.stringify({
+    exportedAt: formatTimestamp(Date.now()),
+    totalRecords: records.length,
+    records,
+    trendData,
+  }, null, 2);
+
+  const now = new Date();
+  downloadFile(json, `uart-log-${formatFileTimestamp(now)}.json`, 'application/json');
+});
+
+function formatFileTimestamp(date) {
+  return date.getFullYear() +
+    String(date.getMonth()+1).padStart(2,'0') +
+    String(date.getDate()).padStart(2,'0') + '-' +
+    String(date.getHours()).padStart(2,'0') +
+    String(date.getMinutes()).padStart(2,'0') +
+    String(date.getSeconds()).padStart(2,'0');
+}
+
+function downloadFile(content, filename, mimeType) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ============================================================================
+// AI AGENT DATA STORE
+// ============================================================================
+function updateAIDataStore() {
+  // Store recent received data for AI agent readability
+  const lines = dom.receiveContainer.querySelectorAll('.receive-line');
+  const recentLines = Array.from(lines).slice(-20);
+  dom.aiRecentData.innerHTML = recentLines.map(l => {
+    return `<div class="ai-data-item"
+      data-timestamp="${l.getAttribute('data-timestamp')}"
+      data-ascii="${escapeHtml(l.getAttribute('data-ascii') || '')}"
+      data-hex="${escapeHtml(l.getAttribute('data-hex') || '')}"></div>`;
+  }).join('');
+
+  // Store trend data for AI agent readability
+  dom.aiTrendData.innerHTML = Object.entries(state.chartVars).map(([name, info]) => {
+    const lastVal = info.data.length > 0 ? info.data[info.data.length - 1].y : 'null';
+    return `<div class="trend-data-json"
+      data-varname="${escapeHtml(name)}"
+      data-label="${escapeHtml(info.label)}"
+      data-latest-value="${lastVal}"
+      data-point-count="${info.data.length}"></div>`;
+  }).join('');
+}
+
+// ============================================================================
+// GLOBAL KEYBOARD SHORTCUTS
+// ============================================================================
+document.addEventListener('keydown', (e) => {
+  // Ctrl+Shift+C to connect/disconnect
+  if (e.ctrlKey && e.shiftKey && e.key === 'C') {
+    e.preventDefault();
+    connectPort();
+  }
+  // Ctrl+L to clear
+  if (e.ctrlKey && e.key === 'l') {
+    e.preventDefault();
+    dom.btnClearRecv.click();
+  }
+  // Escape to close context menu
+  if (e.key === 'Escape') {
+    dom.contextMenu.style.display = 'none';
+  }
+});
+
+// ============================================================================
+// 3D SPACE VIEW — Software 3D Renderer
+// ============================================================================
+
+state.viewMode3d = false;
+state.axis3d = { x: null, y: null, z: null }; // bound variable names
+state.trail3d = [];    // trajectory points [{x,y,z,t}, ...]
+state.trail3dMax = 500;
+
+// 3D camera
+const camera3d = {
+  rotX: -0.5, rotY: 0.6,  // rotation (radians)
+  dist: 5,                 // distance from origin
+  panX: 0, panY: 0,       // pan offset
+};
+
+// Mouse interaction for 3D
+let drag3d = null;
+
+// ---- View Mode Switching ----
+dom.btnView2d.addEventListener('click', () => {
+  state.viewMode3d = false;
+  dom.btnView2d.classList.add('on');
+  dom.btnView3d.classList.remove('on');
+  dom.view3dPanel.style.display = 'none';
+  dom.chartPanel.style.display = '';
+  setupChartCanvas();
+  renderChart();
+});
+
+dom.btnView3d.addEventListener('click', () => {
+  state.viewMode3d = true;
+  dom.btnView3d.classList.add('on');
+  dom.btnView2d.classList.remove('on');
+  dom.chartPanel.style.display = 'none';
+  dom.view3dPanel.style.display = '';
+  setTimeout(() => { setup3dCanvas(); render3d(); }, 100);
+});
+
+// ---- 3D Canvas Setup ----
+function setup3dCanvas() {
+  const canvas = dom.view3dCanvas;
+  const wrap = canvas.parentElement;
+  const rect = wrap.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const w = rect.width, h = rect.height;
+  if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+  }
+}
+
+// ---- 3D Math ----
+function vec3(x,y,z) { return {x,y,z}; }
+function vec3Sub(a,b) { return {x:a.x-b.x, y:a.y-b.y, z:a.z-b.z}; }
+function vec3Cross(a,b) { return {x:a.y*b.z-a.z*b.y, y:a.z*b.x-a.x*b.z, z:a.x*b.y-a.y*b.x}; }
+function vec3Dot(a,b) { return a.x*b.x + a.y*b.y + a.z*b.z; }
+function vec3Len(a) { return Math.sqrt(a.x*a.x + a.y*a.y + a.z*a.z); }
+function vec3Norm(a) { const l=vec3Len(a)||1; return {x:a.x/l, y:a.y/l, z:a.z/l}; }
+
+// Rotate point around origin using camera rotation
+function rotatePoint(p, rx, ry) {
+  // Rotate Y
+  let x1 = p.x * Math.cos(ry) + p.z * Math.sin(ry);
+  let z1 = -p.x * Math.sin(ry) + p.z * Math.cos(ry);
+  let y1 = p.y;
+  // Rotate X
+  let y2 = y1 * Math.cos(rx) - z1 * Math.sin(rx);
+  let z2 = y1 * Math.sin(rx) + z1 * Math.cos(rx);
+  return { x: x1, y: y2, z: z2 };
+}
+
+// Project 3D point to 2D screen
+function project3d(p, w, h) {
+  const scale = 150; // pixels per unit
+  const cx = w / 2 + camera3d.panX;
+  const cy = h / 2 + camera3d.panY;
+  const d = camera3d.dist;
+  const rp = rotatePoint(p, camera3d.rotX, camera3d.rotY);
+  const z = rp.z + d;
+  if (z <= 0.01) return null; // behind camera
+  const f = scale / z;
+  return { x: cx + rp.x * f, y: cy - rp.y * f, z: z, px: rp.x, py: rp.y, pz: rp.z };
+}
+
+// ---- 3D Mouse Controls ----
+dom.view3dCanvas.parentElement.addEventListener('mousedown', (e) => {
+  if (!state.viewMode3d) return;
+  e.preventDefault(); // prevent text selection (blue line)
+  drag3d = { x: e.clientX, y: e.clientY, button: e.button,
+    rX: camera3d.rotX, rY: camera3d.rotY, pX: camera3d.panX, pY: camera3d.panY };
+});
+window.addEventListener('mousemove', (e) => {
+  if (!drag3d || !state.viewMode3d) return;
+  if (drag3d.button === 0) {
+    // Left: orbit (reversed direction — drag right → view rotates left)
+    camera3d.rotY = drag3d.rY - (e.clientX - drag3d.x) * 0.01;
+    camera3d.rotX = drag3d.rX - (e.clientY - drag3d.y) * 0.01;
+    camera3d.rotX = Math.max(-1.5, Math.min(1.5, camera3d.rotX));
+  } else if (drag3d.button === 2) {
+    // Right: pan
+    camera3d.panX = drag3d.pX + (e.clientX - drag3d.x);
+    camera3d.panY = drag3d.pY + (e.clientY - drag3d.y);
+  }
+  render3d();
+});
+window.addEventListener('mouseup', () => { drag3d = null; });
+dom.view3dCanvas.parentElement.addEventListener('wheel', (e) => {
+  if (!state.viewMode3d) return;
+  e.preventDefault();
+  camera3d.dist *= e.deltaY > 0 ? 1.1 : 0.9;
+  camera3d.dist = Math.max(1, Math.min(30, camera3d.dist));
+  render3d();
+}, { passive: false });
+dom.view3dCanvas.parentElement.addEventListener('contextmenu', e => e.preventDefault());
+// Prevent text selection on 3D canvas
+dom.view3dCanvas.parentElement.addEventListener('selectstart', e => e.preventDefault());
+
+// ---- Variable Binding ----
+function get3dBoundVars() {
+  return {
+    x: dom.bindXVar.value.trim(),
+    y: dom.bindYVar.value.trim(),
+    z: dom.bindZVar.value.trim(),
+  };
+}
+
+// Feed parsed variables to 3D system
+function feedDataTo3D(parsedVars) {
+  if (!state.viewMode3d) return;
+  const bind = get3dBoundVars();
+  let gotData = false;
+
+  const mult = parseFloat(dom.bindMultiplier.value) || 1;
+
+  for (const v of parsedVars) {
+    if (v.name === bind.x) {
+      state.axis3d.x = v.value * mult;
+      gotData = true;
+    }
+    if (v.name === bind.y) {
+      state.axis3d.y = v.value * mult;
+      gotData = true;
+    }
+    if (v.name === bind.z) {
+      state.axis3d.z = v.value * mult;
+      gotData = true;
+    }
+  }
+
+  if (gotData && state.axis3d.x !== null && state.axis3d.y !== null && state.axis3d.z !== null) {
+    state.trail3d.push({
+      x: state.axis3d.x, y: state.axis3d.y, z: state.axis3d.z,
+      t: Date.now()
+    });
+    if (state.trail3d.length > state.trail3dMax) state.trail3d.shift();
+  }
+
+  // Update value display
+  const unit = dom.data3dMode.value === 'orientation' ? '°' : '';
+  const modeLabel = dom.data3dMode.value === 'orientation' ? '旋转角' : '位置';
+  dom.view3dValues.innerHTML = `
+    <div style="color:#f85149;">X: ${state.axis3d.x !== null ? state.axis3d.x.toFixed(2)+unit : '--'}</div>
+    <div style="color:#3fb950;">Y: ${state.axis3d.y !== null ? state.axis3d.y.toFixed(2)+unit : '--'}</div>
+    <div style="color:#58a6ff;">Z: ${state.axis3d.z !== null ? state.axis3d.z.toFixed(2)+unit : '--'}</div>
+    <div style="font-size:9px;color:var(--text-muted);margin-top:2px;">模式: ${modeLabel}</div>
+  `;
+
+  dom.view3dStatus.textContent = gotData ? '● 接收中' : '等待数据...';
+  dom.view3dStatus.style.color = gotData ? '#3fb950' : '';
+
+  render3d();
+}
+
+// ---- 3D Rendering ----
+function render3d() {
+  if (!state.viewMode3d) return;
+  const canvas = dom.view3dCanvas;
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.width / dpr;
+  const h = canvas.height / dpr;
+
+  ctx.save();
+  ctx.scale(dpr, dpr);
+
+  // Background
+  ctx.fillStyle = '#0a0e13';
+  ctx.fillRect(0, 0, w, h);
+
+  // Grid floor (XZ plane) - only when camera is looking from above
+  const gridSize = 4;
+  const gridStep = 0.5;
+  ctx.strokeStyle = '#1a2030';
+  ctx.lineWidth = 0.5;
+  for (let i = -gridSize; i <= gridSize; i += gridStep) {
+    const a = project3d({x:i, y:-1, z:-gridSize}, w, h);
+    const b = project3d({x:i, y:-1, z:gridSize}, w, h);
+    if (a && b) { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
+    const c = project3d({x:-gridSize, y:-1, z:i}, w, h);
+    const d_ = project3d({x:gridSize, y:-1, z:i}, w, h);
+    if (c && d_) { ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(d_.x, d_.y); ctx.stroke(); }
+  }
+
+  // 3D Axes
+  const axisLen = 2.5;
+  const origin = project3d({x:0,y:0,z:0}, w, h);
+  const axX = project3d({x:axisLen, y:0, z:0}, w, h);
+  const axY = project3d({x:0, y:axisLen, z:0}, w, h);
+  const axZ = project3d({x:0, y:0, z:axisLen}, w, h);
+
+  function drawAxis(from, to, color, label) {
+    if (!from || !to) return;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(to.x, to.y); ctx.stroke();
+    // Arrow head
+    const dx = to.x - from.x, dy = to.y - from.y;
+    const len = Math.sqrt(dx*dx+dy*dy) || 1;
+    const ux = dx/len, uy = dy/len;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(to.x, to.y);
+    ctx.lineTo(to.x - ux*8 + uy*5, to.y - uy*8 - ux*5);
+    ctx.lineTo(to.x - ux*8 - uy*5, to.y - uy*8 + ux*5);
+    ctx.fill();
+    // Label
+    ctx.fillStyle = color;
+    ctx.font = 'bold 11px sans-serif';
+    ctx.fillText(label, to.x + ux*4, to.y + uy*4);
+  }
+
+  if (origin) {
+    drawAxis(origin, axX, '#f85149', 'X');
+    drawAxis(origin, axY, '#3fb950', 'Y');
+    drawAxis(origin, axZ, '#58a6ff', 'Z');
+  }
+
+  const model = dom.modelSelect.value;
+  const mode3d = dom.data3dMode.value; // 'position' | 'orientation'
+
+  // Get current 3D values
+  const vx = state.axis3d.x ?? 0;
+  const vy = state.axis3d.y ?? 0;
+  const vz = state.axis3d.z ?? 0;
+
+  // In orientation mode: values are rotation angles (degrees), model stays at origin
+  // In position mode: values are world position, model moves
+  let posX, posY, posZ, rotRx, rotRy, rotRz;
+  if (mode3d === 'orientation') {
+    posX = 0; posY = 0; posZ = 0;
+    rotRx = vx * Math.PI / 180; // degrees to radians
+    rotRy = vy * Math.PI / 180;
+    rotRz = vz * Math.PI / 180;
+  } else {
+    posX = vx; posY = vy; posZ = vz;
+    rotRx = 0; rotRy = 0; rotRz = 0;
+  }
+
+  const rot = { rx: rotRx, ry: rotRy, rz: rotRz };
+
+  // ---- Draw Models ----
+  if (model === 'cube' || model === 'all') {
+    drawCubeRot(ctx, w, h, posX, posY, posZ, rot, 0.4, model === 'all' ? 0.4 : 0.8);
+  }
+  if (model === 'board' || model === 'all') {
+    drawBoardRot(ctx, w, h, posX, posY, posZ, rot, 1.2, 0.2, 0.8, model === 'all' ? 0.3 : 0.7);
+  }
+  if (model === 'point' || model === 'trail' || model === 'all') {
+    // Trail
+    if (state.trail3d.length > 1 && (model === 'trail' || model === 'all')) {
+      ctx.strokeStyle = '#a371f7';
+      ctx.lineWidth = model === 'all' ? 1 : 1.5;
+      ctx.beginPath();
+      for (let i = 0; i < state.trail3d.length; i++) {
+        const pt = state.trail3d[i];
+        const p = project3d({x:pt.x, y:pt.y, z:pt.z}, w, h);
+        if (!p) continue;
+        if (i === 0 || !project3d({x:state.trail3d[i-1].x, y:state.trail3d[i-1].y, z:state.trail3d[i-1].z}, w, h)) {
+          ctx.moveTo(p.x, p.y);
+        } else {
+          ctx.lineTo(p.x, p.y);
+        }
+      }
+      ctx.stroke();
+
+      // Fade trail opacity
+      if (state.trail3d.length > 2) {
+        const lastN = Math.min(20, state.trail3d.length);
+        for (let i = state.trail3d.length - lastN; i < state.trail3d.length - 1; i++) {
+          const alpha = (i - (state.trail3d.length - lastN)) / lastN;
+          const p1 = project3d({x:state.trail3d[i].x, y:state.trail3d[i].y, z:state.trail3d[i].z}, w, h);
+          const p2 = project3d({x:state.trail3d[i+1].x, y:state.trail3d[i+1].y, z:state.trail3d[i+1].z}, w, h);
+          if (!p1 || !p2) continue;
+          ctx.strokeStyle = `rgba(163, 113, 247, ${0.1 + alpha * 0.9})`;
+          ctx.lineWidth = 1 + alpha * 2;
+          ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+        }
+      }
+    }
+    // Current point (always at raw data position for trail/point mode)
+    const pt = project3d({x:vx, y:vy, z:vz}, w, h);
+    if (pt && (model === 'point' || model === 'trail' || model === 'all')) {
+      // Glow effect
+      const gradient = ctx.createRadialGradient(pt.x, pt.y, 0, pt.x, pt.y, model === 'all' ? 10 : 14);
+      gradient.addColorStop(0, 'rgba(255, 200, 100, 0.9)');
+      gradient.addColorStop(0.4, 'rgba(255, 150, 50, 0.4)');
+      gradient.addColorStop(1, 'rgba(255, 100, 20, 0)');
+      ctx.fillStyle = gradient;
+      ctx.beginPath(); ctx.arc(pt.x, pt.y, model === 'all' ? 10 : 14, 0, Math.PI*2); ctx.fill();
+      // Core
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(pt.x, pt.y, model === 'all' ? 2 : 3, 0, Math.PI*2); ctx.fill();
+    }
+  }
+
+  // Value labels near the current point
+  if (origin && (state.axis3d.x !== null || state.axis3d.y !== null || state.axis3d.z !== null)) {
+    const pp = project3d({x:vx, y:vy, z:vz}, w, h);
+    if (pp) {
+      ctx.fillStyle = 'rgba(255,255,255,0.15)';
+      ctx.font = '10px monospace';
+      const unit = mode3d === 'orientation' ? '°' : '';
+      const lbl = `(${vx.toFixed(2)}${unit}, ${vy.toFixed(2)}${unit}, ${vz.toFixed(2)}${unit})`;
+      ctx.fillText(lbl, pp.x + 10, pp.y - 10);
+    }
+  }
+
+  ctx.restore();
+}
+
+// ---- 3D Model: Cube ----
+// Apply rotation (rx, ry, rz in radians) to a point relative to center
+function rotateVertex(v, cx, cy, cz, rx, ry, rz) {
+  let x = v.x - cx, y = v.y - cy, z = v.z - cz;
+  // Rotate Z
+  let x1 = x * Math.cos(rz) - y * Math.sin(rz);
+  let y1 = x * Math.sin(rz) + y * Math.cos(rz);
+  // Rotate Y
+  let x2 = x1 * Math.cos(ry) + z * Math.sin(ry);
+  let z1 = -x1 * Math.sin(ry) + z * Math.cos(ry);
+  // Rotate X
+  let y2 = y1 * Math.cos(rx) - z1 * Math.sin(rx);
+  let z2 = y1 * Math.sin(rx) + z1 * Math.cos(rx);
+  return { x: x2 + cx, y: y2 + cy, z: z2 + cz };
+}
+
+function drawCubeRot(ctx, w, h, cx, cy, cz, rot, size, alpha) {
+  const s = size / 2;
+  // 8 vertices (local space, then rotated)
+  const localVerts = [
+    {x:-s, y:-s, z:-s}, {x:s, y:-s, z:-s}, {x:s, y:s, z:-s}, {x:-s, y:s, z:-s},
+    {x:-s, y:-s, z:s},  {x:s, y:-s, z:s},  {x:s, y:s, z:s},  {x:-s, y:s, z:s},
+  ];
+  const verts = localVerts.map(v => rotateVertex(v, 0, 0, 0, rot.rx, rot.ry, rot.rz));
+  // Translate to position
+  const worldVerts = verts.map(v => ({ x: v.x + cx, y: v.y + cy, z: v.z + cz }));
+
+  const faces = [
+    {v:[0,1,2,3], n:{x:0,y:0,z:-1}}, {v:[4,7,6,5], n:{x:0,y:0,z:1}},
+    {v:[0,4,5,1], n:{x:0,y:-1,z:0}}, {v:[3,2,6,7], n:{x:0,y:1,z:0}},
+    {v:[0,3,7,4], n:{x:-1,y:0,z:0}}, {v:[1,5,6,2], n:{x:1,y:0,z:0}},
+  ];
+
+  // Rotate normals too for proper lighting
+  const rotNorms = faces.map(f => rotateVertex(f.n, 0, 0, 0, rot.rx, rot.ry, rot.rz));
+
+  const proj = worldVerts.map(v => project3d(v, w, h));
+  for (const p of proj) if (!p) return;
+
+  // Sort faces by depth
+  const faceData = faces.map((f, fi) => {
+    const cx_f = worldVerts.slice(f.v[0], f.v[0]+1).concat(worldVerts.slice(f.v[2], f.v[2]+1))
+      .reduce((s,p) => ({x:s.x+p.x, y:s.y+p.y, z:s.z+p.z}), {x:0,y:0,z:0});
+    const center = { x: cx_f.x/2, y: cx_f.y/2, z: cx_f.z/2 };
+    const cp = project3d(center, w, h);
+    return { ...f, depth: cp ? cp.z : -Infinity, rn: rotNorms[fi] };
+  });
+  faceData.sort((a,b) => b.depth - a.depth);
+
+  for (const f of faceData) {
+    const pts = f.v.map(i => proj[i]);
+    const rn = f.rn;
+    const light = Math.abs(rn.y) * 0.4 + Math.abs(rn.x) * 0.2 + Math.abs(rn.z) * 0.2 + 0.2;
+    const r = Math.floor(88 * light + 30), g = Math.floor(166 * light + 30), b_ = Math.floor(255 * light + 40);
+    ctx.fillStyle = `rgba(${r},${g},${b_},${alpha})`;
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = `rgba(100,180,255,${alpha * 0.6})`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+}
+
+function drawBoardRot(ctx, w, h, cx, cy, cz, rot, bw, bh, bd, alpha) {
+  const hw = bw/2, hh = bh/2, hd = bd/2;
+  // Local vertices
+  const localVerts = [
+    {x:-hw, y:-hd, z:-hh}, {x:hw, y:-hd, z:-hh}, {x:hw, y:hd, z:-hh}, {x:-hw, y:hd, z:-hh},
+    {x:-hw, y:-hd, z:hh},  {x:hw, y:-hd, z:hh},  {x:hw, y:hd, z:hh},  {x:-hw, y:hd, z:hh},
+  ];
+  const verts = localVerts.map(v => rotateVertex(v, 0, 0, 0, rot.rx, rot.ry, rot.rz));
+  const worldVerts = verts.map(v => ({ x: v.x + cx, y: v.y + cy, z: v.z + cz }));
+
+  const faces = [
+    {v:[0,1,2,3], n:{x:0,y:0,z:-1}}, {v:[4,7,6,5], n:{x:0,y:0,z:1}},
+    {v:[0,4,5,1], n:{x:0,y:-1,z:0}}, {v:[3,2,6,7], n:{x:0,y:1,z:0}},
+    {v:[0,3,7,4], n:{x:-1,y:0,z:0}}, {v:[1,5,6,2], n:{x:1,y:0,z:0}},
+  ];
+
+  const rotNorms = faces.map(f => rotateVertex(f.n, 0, 0, 0, rot.rx, rot.ry, rot.rz));
+
+  const proj = worldVerts.map(v => project3d(v, w, h));
+  for (const p of proj) if (!p) return;
+
+  const faceData = faces.map((f, fi) => {
+    const cx_f = worldVerts[f.v[0]].x + worldVerts[f.v[2]].x;
+    const cy_f = worldVerts[f.v[0]].y + worldVerts[f.v[2]].y;
+    const cz_f = worldVerts[f.v[0]].z + worldVerts[f.v[2]].z;
+    const cp = project3d({x:cx_f/2, y:cy_f/2, z:cz_f/2}, w, h);
+    return { ...f, depth: cp ? cp.z : -Infinity, rn: rotNorms[fi] };
+  });
+  faceData.sort((a,b) => b.depth - a.depth);
+
+  for (const f of faceData) {
+    const pts = f.v.map(i => proj[i]);
+    const rn = f.rn;
+    const isTopBottom = Math.abs(rn.y) > 0.9;
+    const r = isTopBottom ? 20 : 15, g = isTopBottom ? 140 : 40, b_ = isTopBottom ? 40 : 25;
+    const light = Math.abs(rn.y) * 0.4 + 0.3;
+    ctx.fillStyle = `rgba(${Math.floor(r*light+20)},${Math.floor(g*light+20)},${Math.floor(b_*light+10)},${alpha})`;
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = `rgba(60,200,60,${alpha * 0.5})`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    if (isTopBottom) {
+      ctx.fillStyle = `rgba(180,180,180,${alpha * 0.7})`;
+      for (let j = 0; j < 4; j++) {
+        const t = (j + 0.5) / 4;
+        const px = pts[0].x + (pts[1].x - pts[0].x) * t;
+        const py = pts[0].y + (pts[1].y - pts[0].y) * t;
+        ctx.fillRect(px-1.5, py-1, 3, 2);
+        const px2 = pts[3].x + (pts[2].x - pts[3].x) * t;
+        const py2 = pts[3].y + (pts[2].y - pts[3].y) * t;
+        ctx.fillRect(px2-1.5, py2-1, 3, 2);
+      }
+    }
+  }
+}
+
+// ResizeObserver for 3D canvas
+if (window.ResizeObserver) {
+  const obs3d = new ResizeObserver(() => {
+    if (state.viewMode3d) { setup3dCanvas(); render3d(); }
+  });
+  // observe after DOM ready
+  setTimeout(() => {
+    if (dom.view3dCanvas.parentElement) obs3d.observe(dom.view3dCanvas.parentElement);
+  }, 500);
+}
+
+// ============================================================================
+// INITIALIZATION
+// ============================================================================
+function init() {
+  initChart();
+  refreshPorts();
+  updateStatusTime();
+  updateAIDataStore();
+
+  // Hot-plug detection
+  if ('serial' in navigator) {
+    navigator.serial.addEventListener('connect', (e) => {
+      console.log('串口已连接:', e.target);
+      refreshPorts();
+    });
+    navigator.serial.addEventListener('disconnect', (e) => {
+      console.log('串口已断开:', e.target);
+      refreshPorts();
+    });
+  }
+}
+
+dom.btnConnect.addEventListener('click', connectPort);
+
+init();
+console.log('🔌 UART 串口调试助手已就绪');
+console.log('   Web Serial API: ' + ('serial' in navigator ? '✅ 支持' : '❌ 不支持'));
+console.log('   趋势图: ✅ 纯 Canvas 自绘 (零依赖)');
+console.log('   AI Agent 数据接口: document.querySelector("#ai-data-store")');
+
+})();
+</script>
+</body>
+</html>
