@@ -168,7 +168,19 @@ msedge --remote-debugging-port=9222
 
 #### 3. 打开串口助手并连接设备
 
-在 Edge 中打开 `serial-monitor.html`，选择串口设备，点击「连接」，确认数据正常刷新。
+在刚才启动的 Edge 浏览器地址栏输入你的 `serial-monitor.html` 文件路径。每个人存放位置不同，按你的实际路径修改：
+
+```
+file:///C:/work_app/UART/serial-monitor.html
+```
+
+> 路径格式：`file:///` + 你的文件夹路径 + `/serial-monitor.html`
+>
+> 例如：`file:///D:/projects/serial-monitor.html` 或 `file:///C:/Users/你的用户名/Desktop/serial-monitor.html`
+>
+> **提示**：在文件资源管理器中找到 `serial-monitor.html`，按住 Shift 右键 → 「复制文件路径」，粘贴到地址栏后在最前面加上 `file:///`。
+
+回车打开页面后，选择串口设备，点击「**连接**」，确认接收区有数据刷新。
 
 #### 4. 回到 AI Agent 对话
 
@@ -188,12 +200,26 @@ taskkill 关 Edge → 调试端口启动 → 打开串口助手连设备 → 回
 
 ---
 
-### DevTools Console 方式（通用）
+### 手动分析方式（两种）
 
-如果不想配置 CDP，任何 AI 工具都可以通过浏览器 Console 读取数据。在串口助手页面按 F12，Console 中执行：
+如果暂时不想配置 CDP 自动化，也可以通过以下方式把数据交给 AI 分析。
+
+**方式 A：导出 JSON 按钮**
+
+1. 在串口助手页面顶部工具栏，点击「**导出JSON**」按钮
+2. 浏览器会自动下载一个 `uart-log-xxxxxx.json` 文件
+3. 在 AI 对话中直接拖入该文件，或说：
+
+> "读取 C:/Users/xxx/Downloads/uart-log-xxxxxx.json，帮我分析 PID 参数"
+
+**方式 B：Console 一键复制**
+
+1. 在串口助手页面按 **F12** 打开开发者工具
+2. 切换到 **Console** 标签
+3. 粘贴以下代码，回车执行：
 
 ```javascript
-// 导出最近 30 条数据（复制输出贴给 AI）
+// 复制最近 30 条数据到剪贴板，直接贴给 AI
 copy(JSON.stringify(
   Array.from(document.querySelectorAll('.receive-line[data-ascii]'))
     .slice(-30)
@@ -202,7 +228,9 @@ copy(JSON.stringify(
 ))
 ```
 
-`copy()` 会直接把结果复制到剪贴板，粘贴给 AI 即可。
+4. 看到 Console 输出 `undefined` 说明已复制成功，直接 **Ctrl+V** 粘贴给 AI 即可。
+
+> 修改 `.slice(-30)` 中的数字可以调整复制的行数，例如 `.slice(-100)` 取最近 100 条。
 
 ---
 
