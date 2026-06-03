@@ -970,7 +970,8 @@ function bytesToAscii(bytes) {
 function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str;
-  return div.innerHTML;
+  // Also escape double-quote to prevent attribute injection XSS
+  return div.innerHTML.replace(/"/g, '&quot;');
 }
 
 function sleep(ms) {
