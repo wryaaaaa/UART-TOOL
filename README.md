@@ -126,6 +126,99 @@
 
 ---
 
+## 🤖 AI Agent 自动化闭环配置
+
+配置一次后，AI Agent 可以**自主读取串口数据、分析问题、修改参数**，无需你手动导出文件。
+
+### 适用 Agent
+
+| Agent | 方式 |
+|-------|------|
+| Claude Code（VSCode 扩展） | CDP 直连 |
+| Cursor / Copilot | 通过 DevTools Console 读取 |
+| 任意 AI 工具 | 页面内置 `#ai-data-store` 数据接口 |
+
+---
+
+### Claude Code 自动化配置（CDP 直连）
+
+AI 直接连到你浏览器的调试端口，实时读取 DOM 上的串口数据。
+
+#### 1. 完全关闭 Edge
+
+PowerShell 执行（必须，否则调试端口不生效）：
+
+```powershell
+taskkill /f /im msedge.exe
+```
+
+> 确保任务管理器中没有残留 `msedge.exe` 进程。
+
+#### 2. 带调试端口启动 Edge
+
+Win+R 打开运行框，输入：
+
+```
+msedge --remote-debugging-port=9222
+```
+
+回车启动 Edge。
+
+> 一劳永逸：右键 Edge 桌面快捷方式 → 属性 → 目标后面加 ` --remote-debugging-port=9222`，以后双击图标就是调试模式。
+
+#### 3. 打开串口助手并连接设备
+
+在 Edge 中打开 `serial-monitor.html`，选择串口设备，点击「连接」，确认数据正常刷新。
+
+#### 4. 回到 AI Agent 对话
+
+在 Claude Code 中发送指令即可，例如：
+
+> "读取串口助手最近 30 条数据，帮我分析 PID 参数是否合理"
+
+AI 会自动通过 CDP 连接浏览器、执行 JS 读取页面数据、返回分析结论。
+
+#### 工作流程
+
+```
+taskkill 关 Edge → 调试端口启动 → 打开串口助手连设备 → 回对话让 AI 分析
+                                                              ↓
+                                         AI 读数据 → 分析 → 建议/改代码 → push
+```
+
+---
+
+### DevTools Console 方式（通用）
+
+如果不想配置 CDP，任何 AI 工具都可以通过浏览器 Console 读取数据。在串口助手页面按 F12，Console 中执行：
+
+```javascript
+// 导出最近 30 条数据（复制输出贴给 AI）
+copy(JSON.stringify(
+  Array.from(document.querySelectorAll('.receive-line[data-ascii]'))
+    .slice(-30)
+    .map(l => ({ time: new Date(+l.dataset.timestamp).toLocaleTimeString(), data: l.dataset.ascii })),
+  null, 2
+))
+```
+
+`copy()` 会直接把结果复制到剪贴板，粘贴给 AI 即可。
+
+---
+
+### 页面数据接口速查
+
+| 目标数据 | 查询方式 |
+|----------|----------|
+| 最新 N 条接收数据 | `document.querySelectorAll('.receive-line[data-ascii]')` |
+| 单条时间戳 | `el.dataset.timestamp` |
+| 单条 ASCII | `el.dataset.ascii` |
+| 单条 HEX | `el.dataset.hex` |
+| 串口连接状态 | `document.querySelector('[data-port-status]').dataset.portStatus` |
+| 完整数据存储 | `document.querySelector('#ai-data-store')` |
+
+---
+
 ## 文件结构
 
 ```
