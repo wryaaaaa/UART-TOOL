@@ -46,7 +46,7 @@
 ### 数据导出
 - TXT 日志（含 HEX dump）/ JSON 结构化数据
 
-![主界面](screenshots/主界面.png)
+![2D数据监控](screenshots/2D数据监控.png)
 
 ---
 
