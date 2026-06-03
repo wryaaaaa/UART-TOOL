@@ -15,7 +15,8 @@
 | 额外依赖 | **无**。不需要 Node.js、不需要 npm install、不需要任何 JS 库或 CDN |
 | 网络要求 | **不需要**。完全离线可用，下载后双击即可 |
 
-> <span style="color:red;font-weight:bold;">拷贝到任何电脑上，双击 serial-monitor.html 直接用。</span>
+> [!IMPORTANT]
+> **拷贝到任何电脑上，双击 `serial-monitor.html` 直接用。不需要安装任何东西。**
 
 ---
 
