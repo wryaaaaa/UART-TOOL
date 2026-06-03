@@ -217,7 +217,90 @@ UART/
 
 ## 📸 截图
 
-> 截图请放入 `screenshots/` 文件夹。
+### 主界面（接收数据 + 发送区）
+![主界面](screenshots/主界面.png)
+
+### 串口连接配置
+![连接窗口](screenshots/链接窗口.png)
+
+### 三维空间调试
+![3D功能](screenshots/3D功能.png)
+
+### JSON 数据导出
+![导出Json文件](screenshots/导出Json文件.png)
+
+---
+
+## 🤖 AI Agent 联合调试指南
+
+### 工作流程
+
+将本工具与 AI Agent（Claude Code、Cursor、Copilot 等）配合使用：
+
+```
+串口设备 → serial-monitor.html → AI Agent 读取 DOM 数据 → 分析调试
+```
+
+### 步骤 1：打开串口助手
+
+在 Chrome/Edge 中打开 `serial-monitor.html`，连接串口设备。
+
+### 步骤 2：AI Agent 读取数据
+
+AI Agent 通过浏览器自动化工具（如 Chrome DevTools Protocol、Puppeteer、Playwright）读取页面数据：
+
+```javascript
+// === 获取接收区最新 10 条数据 ===
+const lines = document.querySelectorAll('.receive-line[data-ascii]');
+const recent = Array.from(lines).slice(-10).map(l => ({
+  timestamp: l.dataset.timestamp,
+  ascii: l.dataset.ascii,
+  hex: l.dataset.hex
+}));
+console.table(recent);
+
+// === 获取趋势图变量最新值 ===
+const vars = document.querySelectorAll('[data-varname]');
+vars.forEach(el => {
+  console.log(`${el.dataset.varname}: ${el.dataset.latestValue}`);
+});
+
+// === 检查串口连接状态 ===
+const status = document.querySelector('[data-port-status]').dataset.portStatus;
+console.log('串口状态:', status); // 'connected' | 'disconnected'
+
+// === 导出完整数据存储 ===
+const dataStore = document.querySelector('#ai-data-store').innerHTML;
+```
+
+### 步骤 3：典型调试场景
+
+**场景 A：PID 参数调优**
+```
+1. 设备输出: [PID] Err=-0.53 P=-0.39 I=12.10 D=0.00 Out=11.7
+2. 串口助手自动解析: Err, P, I, D, Out 五个变量
+3. 趋势图绑定 Err, Out → 实时看响应曲线
+4. AI Agent 读取数据 → 分析超调量、稳态误差 → 建议 Kp/Ki/Kd 调整
+```
+
+**场景 B：传感器异常检测**
+```
+1. MPU6050 输出: Ax=0.12 Ay=-9.81 Az=0.05
+2. 3D 模式绑 Ax/Ay/Az → 姿态模式 → 观察立方体方向
+3. AI Agent 读取最近 100 个数据点 → 检测异常抖动 → 定位硬件问题
+```
+
+**场景 C：通信协议调试**
+```
+1. 切换到 HEX 模式查看原始字节
+2. AI Agent 读取 data-hex → 解析协议帧 → 校验 CRC → 找出错误帧
+```
+
+### 在 Claude Code 中直接使用
+
+如果你用 VSCode + Claude Code 扩展，可以在对话中让我通过 `agent-browser` 工具直接操作页面：
+
+> "打开串口助手，读取最近 20 条接收数据，帮我分析 PID 响应有没有超调"
 
 ---
 
