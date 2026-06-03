@@ -6,6 +6,19 @@
 
 ---
 
+## 环境要求
+
+| 项目 | 说明 |
+|------|------|
+| 浏览器 | **Chrome** 或 **Edge**（需要 Chromium 内核，支持 Web Serial API） |
+| 操作系统 | Windows / macOS / Linux 均可 |
+| 额外依赖 | **无**。不需要 Node.js、不需要 npm install、不需要任何 JS 库或 CDN |
+| 网络要求 | **不需要**。完全离线可用，下载后双击即可 |
+
+> 拷贝到任何电脑上，双击 `serial-monitor.html` 直接用。
+
+---
+
 ## 功能
 
 ### 串口通信
