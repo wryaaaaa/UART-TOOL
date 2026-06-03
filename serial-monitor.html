@@ -2074,6 +2074,9 @@ function renderChart() {
   // ---- Draw variable lines ----
   ctx.lineWidth = 2;
 
+  // First pass: draw lines + collect last-point info for labels
+  const labelItems = [];
+
   for (const [, info] of varEntries) {
     if (info.data.length < 2) continue;
 
@@ -2102,6 +2105,92 @@ function renderChart() {
     ctx.beginPath();
     ctx.arc(lx, ly, 3, 0, Math.PI * 2);
     ctx.fill();
+
+    // Collect for label pass
+    labelItems.push({
+      x: lx, y: ly,
+      value: lastPt.y,
+      color: info.color,
+      label: info.label,
+    });
+  }
+
+  // Second pass: draw value labels near line endpoints, avoiding overlap
+  if (labelItems.length > 0) {
+    const LABEL_HEIGHT = 14;
+    const LABEL_PADDING = 2;
+
+    // Sort by Y position
+    labelItems.sort((a, b) => a.y - b.y);
+
+    // Reposition Y to avoid overlap (push apart if too close)
+    for (let i = 1; i < labelItems.length; i++) {
+      const prev = labelItems[i - 1];
+      const curr = labelItems[i];
+      const minGap = LABEL_HEIGHT + LABEL_PADDING;
+      if (curr.y - prev.y < minGap) {
+        curr.y = prev.y + minGap;
+      }
+      // Also don't let it go below chart
+      if (curr.y > chartBottom - LABEL_HEIGHT) {
+        curr.y = chartBottom - LABEL_HEIGHT;
+      }
+    }
+    // Reverse check: don't go above chart
+    for (let i = labelItems.length - 2; i >= 0; i--) {
+      const next = labelItems[i + 1];
+      const curr = labelItems[i];
+      const minGap = LABEL_HEIGHT + LABEL_PADDING;
+      if (next.y - curr.y < minGap) {
+        curr.y = next.y - minGap;
+      }
+      if (curr.y < chartTop + LABEL_HEIGHT) {
+        curr.y = chartTop + LABEL_HEIGHT;
+      }
+    }
+
+    // Draw labels
+    ctx.font = 'bold 10px "Segoe UI", system-ui, sans-serif';
+    ctx.textBaseline = 'middle';
+
+    for (const item of labelItems) {
+      const text = item.value.toFixed(2);
+      const textW = ctx.measureText(text).width + 8;
+
+      // Position label to the right of the point (or left if near right edge)
+      let labelX = item.x + 10;
+      if (labelX + textW > chartRight) {
+        labelX = item.x - textW - 10;
+      }
+
+      // Background pill
+      const bgX = labelX - 4;
+      const bgY = item.y - 8;
+      const bgW = textW;
+      const bgH = 16;
+
+      ctx.fillStyle = 'rgba(13, 17, 23, 0.85)';
+      ctx.strokeStyle = item.color;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(bgX, bgY, bgW, bgH, 4);
+      ctx.fill();
+      ctx.stroke();
+
+      // Connector line from dot to label
+      ctx.strokeStyle = item.color + '88';
+      ctx.lineWidth = 0.5;
+      ctx.setLineDash([3, 2]);
+      ctx.beginPath();
+      ctx.moveTo(labelX > item.x ? item.x + 4 : item.x - 4, item.y);
+      ctx.lineTo(labelX > item.x ? bgX : bgX + bgW, item.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Text
+      ctx.fillStyle = '#fff';
+      ctx.fillText(text, labelX, item.y);
+    }
   }
 
   // ---- Legend ----
