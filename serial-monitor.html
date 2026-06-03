@@ -650,7 +650,7 @@ button.accent:hover { background: rgba(63,185,80,0.15); }
         <!-- Chart Panel -->
         <div id="chart-panel">
           <div id="chart-panel-header">
-            <span>📊 趋势图 <span style="font-size:10px;color:var(--text-muted);">(滚轮缩放Y | Shift+滚轮缩放X | 拖拽平移 | 双击重置)</span></span>
+            <span>📊 趋势图 <span style="font-size:10px;color:var(--text-muted);">(滚轮缩放X | Shift+滚轮缩放Y | 拖拽平移 | 双击重置)</span></span>
             <span id="zoom-indicator" style="display:none;font-size:10px;color:var(--accent-orange);margin-left:8px;cursor:pointer;" title="双击图表也可重置">🔍 已缩放 (点击重置)</span>
             <span class="chevron">▼</span>
           </div>
@@ -1720,8 +1720,8 @@ function initChart() {
     const factor = e.deltaY < 0 ? 0.8 : 1.25; // zoom in / out
 
     // Determine what to zoom
-    const zoomY = !e.shiftKey;   // default wheel: zoom Y (value), Shift+wheel: zoom X (time)
-    const zoomX = e.shiftKey;
+    const zoomX = !e.shiftKey;   // wheel: zoom X (time), Shift+wheel: zoom Y (value)
+    const zoomY = e.shiftKey;
 
     // Get current ranges (auto or zoomed)
     const ranges = getChartRanges();
@@ -1918,20 +1918,12 @@ function updateChartData(parsedVars) {
 }
 
 function scheduleChartRender() {
-  const now = performance.now();
   if (state.chartRenderPending) return;
-  const elapsed = now - state.lastChartRender;
-  if (elapsed < 50) {
-    state.chartRenderPending = true;
-    setTimeout(() => {
-      state.chartRenderPending = false;
-      state.lastChartRender = performance.now();
-      renderChart();
-    }, 50 - elapsed);
-  } else {
-    state.lastChartRender = now;
+  state.chartRenderPending = true;
+  requestAnimationFrame(() => {
+    state.chartRenderPending = false;
     renderChart();
-  }
+  });
 }
 
 // ---- Canvas Rendering ----
