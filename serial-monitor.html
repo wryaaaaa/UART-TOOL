@@ -559,7 +559,7 @@ button.accent:hover { background: rgba(63,185,80,0.15); }
   </div>
   <div class="divider"></div>
   <div class="group">
-    <button id="btn-clear-recv" title="清空接收区">清空</button>
+    <button id="btn-clear-recv" title="清空所有数据（接收区+图表+3D）">清空</button>
     <button id="btn-export-txt" title="导出 TXT 日志">导出TXT</button>
     <button id="btn-export-json" title="导出 JSON">导出JSON</button>
   </div>
@@ -1633,6 +1633,25 @@ dom.btnClearRecv.addEventListener('click', () => {
   state.pendingLines = [];
   if (state.flushTimer) { clearTimeout(state.flushTimer); state.flushTimer = null; }
   dom.rxCount.textContent = 'Rx: 0';
+
+  // 清除 2D 图表数据
+  Object.values(state.chartVars).forEach(v => v.data = []);
+  resetChartZoom();
+  scheduleChartRender();
+  renderChartVarValues();
+
+  // 清除 3D 轨迹数据
+  state.trail3d = [];
+  state.axis3d = { x: null, y: null, z: null };
+  if (state.viewMode3d) {
+    render3d();
+    dom.view3dValues.innerHTML = '';
+    dom.view3dStatus.textContent = '等待数据...';
+    dom.view3dStatus.style.color = '';
+  }
+
+  // 刷新 AI 数据存储
+  updateAIDataStore();
 });
 
 // ============================================================================
