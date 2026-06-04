@@ -1419,7 +1419,7 @@ state.csvColumnNames = [];
 // Handles: Err=-0.53, RP3= 390, Kp=0.726, SET=2.5, "Err = -0.53"
 function parseKeyEqualsValue(text, ts) {
   const results = [];
-  const re = /([a-zA-Z_][\w]*)\s*=\s*(-?[\d]+(?:\.\d+)?(?:[eE][+-]?\d+)?)\b/g;
+  const re = /([a-zA-Z_][\w]*)\s*=\s*([-+]?[\d]+(?:\.\d+)?(?:[eE][+-]?\d+)?)\b/g;
   let match;
   while ((match = re.exec(text)) !== null) {
     const name = match[1];
@@ -1434,7 +1434,7 @@ function parseKeyEqualsValue(text, ts) {
 // Parser: key:value (colon)
 function parseKeyColonValue(text, ts) {
   const results = [];
-  const re = /([a-zA-Z_][\w]*)\s*:\s*(-?[\d]+(?:\.\d+)?(?:[eE][+-]?\d+)?)\b/g;
+  const re = /([a-zA-Z_][\w]*)\s*:\s*([-+]?[\d]+(?:\.\d+)?(?:[eE][+-]?\d+)?)\b/g;
   let match;
   while ((match = re.exec(text)) !== null) {
     const name = match[1];
@@ -1480,7 +1480,7 @@ function parseBracketFormat(text, ts) {
 function parseJSON(text, ts) {
   const results = [];
   // Find JSON objects in text
-  const re = /\{[^{}]*(?:"|')(\w+)(?:"|')\s*:\s*(-?[\d]+(?:\.\d+)?(?:[eE][+-]?\d+)?)[^{}]*\}/g;
+  const re = /\{[^{}]*(?:"|')(\w+)(?:"|')\s*:\s*([-+]?[\d]+(?:\.\d+)?(?:[eE][+-]?\d+)?)[^{}]*\}/g;
   let match;
   while ((match = re.exec(text)) !== null) {
     const name = match[1];
@@ -1544,7 +1544,7 @@ function parseATCommand(text, ts) {
   const results = [];
   // AT response numeric extractions:
   // +COMMAND:val1,val2,... or +COMMAND=val
-  const re = /\+(\w+)[:=]\s*(-?[\d]+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g;
+  const re = /\+(\w+)[:=]\s*([-+]?[\d]+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g;
   let match;
   while ((match = re.exec(text)) !== null) {
     const name = match[1];
@@ -1553,7 +1553,7 @@ function parseATCommand(text, ts) {
     results.push({ name, value, timestamp: ts });
   }
   // Also extract comma-separated values after colon: +CMD:123,456,789
-  const colonRe = /\+(\w+):\s*(-?[\d]+(?:\.\d+)?)[,\s]+(-?[\d]+(?:\.\d+)?)/g;
+  const colonRe = /\+(\w+):\s*([-+]?[\d]+(?:\.\d+)?)[,\s]+([-+]?[\d]+(?:\.\d+)?)/g;
   while ((match = colonRe.exec(text)) !== null) {
     // Already captured by the first regex in most cases
   }
